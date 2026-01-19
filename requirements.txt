@@ -1,0 +1,4 @@
+stable-baselines3[extra]
+gymnasium
+numpy
+shimmy>=2.0

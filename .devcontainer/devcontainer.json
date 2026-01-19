@@ -1,0 +1,19 @@
+{
+  "name": "AI-ATC GPU Dev",
+  "build": {
+    "dockerfile": "../Dockerfile"
+  },
+  "runArgs": [
+    "--gpus=all"
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "/usr/bin/python",
+    "remote.extensionKind": {
+      "github.copilot-chat": ["workspace"]
+    }
+  },
+  "extensions": [
+    "ms-python.python"
+  ],
+  "postCreateCommand": "python -c \"import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))\""
+}

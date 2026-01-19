@@ -1,0 +1,13 @@
+cat <<EOF > .gitignore
+*.pyc
+*.pyo
+.env
+.venv
+.vscode/
+models/
+tb_logs/
+logs/
+tensorboard/
+*.mp4
+*.gif
+EOF

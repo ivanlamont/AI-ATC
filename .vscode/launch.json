@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "AI-ATC: Debug Training (GPU)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_ai_atc.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "TF_CPP_MIN_LOG_LEVEL": "2",
+                "TF_FORCE_GPU_ALLOW_GROWTH": "true",
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        }
+    ]
+}
