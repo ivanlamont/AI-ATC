@@ -1,2 +1,6 @@
 __pycache__/*.pyc
 tb_logs/*
+tensorboard/*
+models/*
+visualizations/*
+

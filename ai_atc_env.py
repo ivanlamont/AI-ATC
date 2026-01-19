@@ -1,81 +1,155 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import math
 
-class SimpleATCEnv(gym.Env):
-    """
-    Single airplane, single airport, 2D only.
-    Actions: 0=turn left, 1=turn right, 2=speed up, 3=slow down
-    State: [x, y, vx, vy]
-    """
-    metadata = {"render_modes": ["human"]}
+class AIATCEnv(gym.Env):
+    metadata = {"render_modes": []}
 
-    def __init__(self, max_episode_steps=100):
+    def __init__(self):
         super().__init__()
 
-        self.action_space = spaces.Discrete(4)
-        self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32
-        )
+        self.max_turn_rate = math.radians(15)      # deg/sec
+        self.max_turn_accel = math.radians(30)     # deg/sec²
 
+        # --- Simulation parameters ---
         self.dt = 1.0
-        self.max_speed = 20.0
-        self.min_speed = 1.0
-        self.turn_angle = np.pi / 18
-        self.target = np.array([0.0, 0.0], dtype=np.float32)
+        self.turn_rate = math.radians(5)
+        self.speed_delta = 0.05
 
-        self.max_episode_steps = max_episode_steps
-        self.step_count = 0
+        self.airport = np.array([0.0, 0.0])
+        self.success_radius = 0.5
+        self.max_distance = 20.0
+        self.min_separation = 1.0
+
+        # --- Action space ---
+        self.action_space = spaces.Discrete(25)  # 5 actions per plane
+
+        # --- Observation space ---
+        high = np.array([np.inf] * 11, dtype=np.float32)
+        self.observation_space = spaces.Box(-high, high, dtype=np.float32)
+
+        self.reset()
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        self.pos = np.array([100.0, 100.0], dtype=np.float32)
-        self.vel = np.array([-1.0, -1.0], dtype=np.float32)
-        self.step_count = 0
-        self.last_distance = np.linalg.norm(self.pos - self.target)
+        self.planes = []
+        for _ in range(2):
+            pos = np.random.uniform(-10, 10, size=2)
+            heading = np.random.uniform(0, 2 * math.pi)
+            speed = np.random.uniform(0.8, 1.2)
 
-        return self._get_state(), {}
+            plane = {
+                "pos": pos,
+                "heading": heading,
+                "speed": speed,
+                "min_speed": 0.8 * speed,
+                "max_speed": 1.2 * speed,
+                "current_turn_rate": 0.0,
+                "desired_turn_rate": 0.0,
+            }
 
-    def _get_state(self):
-        return np.concatenate([self.pos, self.vel])
+            self.planes.append(plane)
+
+        return self._get_obs(), {}
 
     def step(self, action):
-        self.step_count += 1
+        a1 = action // 5
+        a2 = action % 5
+        actions = [a1, a2]
+        TURN_COMMAND = {
+            0: 0.0,                          # no-op
+            1: +self.max_turn_rate,          # turn left
+            2: -self.max_turn_rate,          # turn right
+        }
 
-        theta = np.arctan2(self.vel[1], self.vel[0])
-        speed = np.linalg.norm(self.vel)
+        for plane, act in zip(self.planes, actions):
+            if act in (1, 2):
+                plane["desired_turn_rate"] = TURN_COMMAND[act]
+            else:
+                plane["desired_turn_rate"] = 0.0
 
-        if action == 0:
-            theta += self.turn_angle
-        elif action == 1:
-            theta -= self.turn_angle
-        elif action == 2:
-            speed = min(speed * 1.1, self.max_speed)
-        elif action == 3:
-            speed = max(speed * 0.9, self.min_speed)
 
-        self.vel = speed * np.array([np.cos(theta), np.sin(theta)])
-        self.pos += self.vel * self.dt
+            if act == 3:
+                plane["speed"] = min(
+                    plane["speed"] + self.speed_delta,
+                    plane["max_speed"]
+                )
+            elif act == 4:
+                plane["speed"] = max(
+                    plane["speed"] - self.speed_delta,
+                    plane["min_speed"]
+                )
 
-        distance = np.linalg.norm(self.pos - self.target)
+            # --- Turn dynamics ---
+            delta = plane["desired_turn_rate"] - plane["current_turn_rate"]
+            delta = np.clip(
+                delta,
+                -self.max_turn_accel * self.dt,
+                self.max_turn_accel * self.dt
+            )
+            plane["current_turn_rate"] += delta
 
-        reward = (self.last_distance - distance) * 10.0
-        reward -= 0.1
-        self.last_distance = distance
+            plane["current_turn_rate"] = np.clip(
+                plane["current_turn_rate"],
+                -self.max_turn_rate,
+                self.max_turn_rate
+            )
 
+            plane["heading"] += plane["current_turn_rate"] * self.dt
+
+            dx = math.cos(plane["heading"]) * plane["speed"] * self.dt
+            dy = math.sin(plane["heading"]) * plane["speed"] * self.dt
+            plane["pos"] += np.array([dx, dy])
+
+        reward = -1.0
+        
         terminated = False
-        truncated = False
 
-        if distance < 1.0:
-            reward += 100.0
+        d1 = np.linalg.norm(self.planes[0]["pos"] - self.airport)
+        d2 = np.linalg.norm(self.planes[1]["pos"] - self.airport)
+        separation = np.linalg.norm(
+            self.planes[0]["pos"] - self.planes[1]["pos"]
+        )
+
+        # --- Collision / unsafe proximity ---
+        if separation < self.min_separation:
+            reward -= 100.0
             terminated = True
-        elif self.step_count >= self.max_episode_steps:
-            truncated = True
-        elif distance > 150.0:
-            truncated = True
 
-        return self._get_state(), reward, terminated, truncated, {}
+        # --- Success ---
+        if d1 < self.success_radius and d2 < self.success_radius:
+            reward += 200.0
+            terminated = True
 
-    def render(self):
-        print(f"Step {self.step_count} | Pos={self.pos} Vel={self.vel}")
+        # --- Early discard optimization ---
+        if d1 > self.max_distance and d2 > self.max_distance:
+            reward -= 50.0
+            terminated = True
+
+        TURN_PENALTY_WEIGHT = 0.1
+
+        total_turn_penalty = sum(
+            abs(plane["current_turn_rate"]) for plane in self.planes
+        )
+
+        reward -= TURN_PENALTY_WEIGHT * total_turn_penalty
+
+        return self._get_obs(), reward, terminated, False, {}
+
+    def _get_obs(self):
+        p1, p2 = self.planes
+
+        d1 = np.linalg.norm(p1["pos"] - self.airport)
+        d2 = np.linalg.norm(p2["pos"] - self.airport)
+        sep = np.linalg.norm(p1["pos"] - p2["pos"])
+
+        return np.array([
+            p1["pos"][0], p1["pos"][1], p1["heading"], p1["speed"],
+            p2["pos"][0], p2["pos"][1], p2["heading"], p2["speed"],
+            d1, d2, sep
+        ], dtype=np.float32)
