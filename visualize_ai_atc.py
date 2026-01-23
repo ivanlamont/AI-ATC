@@ -1,110 +1,139 @@
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")  # headless-safe
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from ai_atc_env import AIATCEnv
+from ai_atc_env import AIATCEnv, ACTION_NAMES, NO_OP
 
 
+# -----------------------------
+# Config
+# -----------------------------
 MODEL_PATH = "models/ai_atc_ppo"
-VECNORM_PATH = "models/vecnormalize.pkl"
-OUTPUT_VIDEO = "ai_atc_two_aircraft.mp4"
+MAX_STEPS = 1500
+OUTPUT_VIDEO = "ai_atc_demo.mp4"
+FPS = 30
 
-MAX_STEPS = 500
-
-
-def make_env():
-    return AIATCEnv()
-
-
-# --- Load env + normalization ---
-env = DummyVecEnv([make_env])
-env = VecNormalize.load(VECNORM_PATH, env)
-env.training = False
-env.norm_reward = False
-
-model = PPO.load(MODEL_PATH)
-
-obs = env.reset()
-
-# --- Storage for trajectories ---
-p1_x, p1_y = [], []
-p2_x, p2_y = [], []
-
-airport_x, airport_y = 0.0, 0.0
-
-done = False
-step = 0
-
-while not done and step < MAX_STEPS:
-    action, _ = model.predict(obs, deterministic=True)
-    obs, reward, done, info = env.step(action)
-
-    # unwrap env
-    base_env = env.envs[0]
-
-    p1 = base_env.planes[0]["pos"]
-    p2 = base_env.planes[1]["pos"]
-
-    p1_x.append(p1[0])
-    p1_y.append(p1[1])
-    p2_x.append(p2[0])
-    p2_y.append(p2[1])
-
-    step += 1
-
-env.close()
-
-# --- Plot setup ---
-fig, ax = plt.subplots(figsize=(6, 6))
-
-ax.set_title("AI-ATC: Two-Aircraft Approach")
-ax.set_xlabel("X position")
-ax.set_ylabel("Y position")
-
-ax.scatter(airport_x, airport_y, c="red", marker="X", s=100, label="Airport")
-
-p1_line, = ax.plot([], [], "b-", label="Aircraft 1 Path")
-p2_line, = ax.plot([], [], "g-", label="Aircraft 2 Path")
-
-p1_dot, = ax.plot([], [], "bo")
-p2_dot, = ax.plot([], [], "go")
-
-ax.legend()
-ax.set_aspect("equal")
-
-# Auto-scale
-all_x = p1_x + p2_x
-all_y = p1_y + p2_y
-margin = 1.0
-
-ax.set_xlim(min(all_x) - margin, max(all_x) + margin)
-ax.set_ylim(min(all_y) - margin, max(all_y) + margin)
+AIRPORT_COLOR = "red"
+PLANE_COLOR = "blue"
+LANDED_COLOR = "green"
 
 
-def update(frame):
-    p1_line.set_data(p1_x[:frame], p1_y[:frame])
-    p2_line.set_data(p2_x[:frame], p2_y[:frame])
+# -----------------------------
+# Load environment & model
+# -----------------------------
+env = AIATCEnv(max_planes=3)
+model = PPO.load(MODEL_PATH, device="cpu")  # CPU is fine for inference
 
-    p1_dot.set_data([p1_x[frame - 1]], [p1_y[frame - 1]])
-    p2_dot.set_data([p2_x[frame - 1]], [p2_y[frame - 1]])
-
-    return p1_line, p2_line, p1_dot, p2_dot
+obs, _ = env.reset()
 
 
-ani = FuncAnimation(
-    fig,
-    update,
-    frames=len(p1_x),
-    interval=50,
-    blit=True
+# -----------------------------
+# Matplotlib setup
+# -----------------------------
+fig, ax = plt.subplots(figsize=(7, 7))
+ax.set_aspect("equal", adjustable="box")
+ax.set_title("AI-ATC — Trained Policy Visualization")
+
+airport_dot, = ax.plot(
+    env.airport[0],
+    env.airport[1],
+    marker="X",
+    markersize=12,
+    color=AIRPORT_COLOR,
+    label="Airport",
 )
 
-writer = FFMpegWriter(fps=20)
-ani.save(OUTPUT_VIDEO, writer=writer)
+plane_dots = []
+heading_lines = []
+
+for _ in range(env.max_planes):
+    dot, = ax.plot([], [], "o", color=PLANE_COLOR)
+    line, = ax.plot([], [], "-", linewidth=1)
+    plane_dots.append(dot)
+    heading_lines.append(line)
+
+ax.legend(loc="upper right")
+
+
+# -----------------------------
+# Storage for trajectory scaling
+# -----------------------------
+all_positions = []
+
+
+# -----------------------------
+# Animation update
+# -----------------------------
+def update(frame_idx):
+    global obs
+
+    actions, _ = model.predict(obs, deterministic=True)
+
+    # Debug print issued instructions
+    for i, action in enumerate(actions):
+        if i < len(env.planes):
+            plane = env.planes[i]
+            if not plane.landed and action != NO_OP:
+                print(f"[ATC] Plane {plane.id}: {ACTION_NAMES[action]}")
+
+    obs, reward, terminated, truncated, _ = env.step(actions)
+
+    all_positions.clear()
+
+    for i, plane in enumerate(env.planes):
+
+        dot = plane_dots[i]
+        line = heading_lines[i]
+
+        if plane.landed:
+            dot.set_data([plane.pos[0]], [plane.pos[1]])
+            dot.set_color(LANDED_COLOR)
+            line.set_data([], [])
+            continue
+
+        x, y = plane.pos
+        all_positions.append((x, y))
+
+        dot.set_data([x], [y])
+        dot.set_color(PLANE_COLOR)
+
+        # Heading visualization
+        heading_len = 6.0
+        hx = x + np.cos(plane.heading) * heading_len
+        hy = y + np.sin(plane.heading) * heading_len
+        line.set_data([x, hx], [y, hy])
+
+    # Auto-scale view
+    if all_positions:
+        xs, ys = zip(*all_positions)
+        pad = 20
+        ax.set_xlim(min(xs) - pad, max(xs) + pad)
+        ax.set_ylim(min(ys) - pad, max(ys) + pad)
+
+    if terminated or truncated or frame_idx >= MAX_STEPS or all(plane.landed for plane in env.planes):
+        anim.event_source.stop()
+
+    return plane_dots + heading_lines
+
+
+# -----------------------------
+# Run animation
+# -----------------------------
+anim = FuncAnimation(
+    fig,
+    update,
+    frames=MAX_STEPS,
+    interval=1000 / FPS,
+    blit=False,
+)
+
+
+# -----------------------------
+# Save video
+# -----------------------------
+writer = FFMpegWriter(fps=FPS)
+anim.save(OUTPUT_VIDEO, writer=writer)
 
 print(f"Saved visualization to {OUTPUT_VIDEO}")

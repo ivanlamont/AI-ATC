@@ -1,19 +1,23 @@
 {
-  "name": "AI-ATC GPU Dev",
+  "name": "AI-ATC Dev Container",
   "build": {
     "dockerfile": "../Dockerfile"
   },
-  "runArgs": [
-    "--gpus=all"
-  ],
-  "settings": {
-    "python.defaultInterpreterPath": "/usr/bin/python",
-    "remote.extensionKind": {
-      "github.copilot-chat": ["workspace"]
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "ms-vscode.cpptools",
+        "github.copilot",
+        "github.copilot-chat"
+      ]
     }
   },
-  "extensions": [
-    "ms-python.python"
-  ],
-  "postCreateCommand": "python -c \"import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))\""
+  "runArgs": [
+    "--gpus=all"
+  ]
 }

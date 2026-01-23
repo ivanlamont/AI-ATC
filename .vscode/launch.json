@@ -8,6 +8,8 @@
             "program": "${workspaceFolder}/train_ai_atc.py",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "preLaunchTask": "Launch TensorBoard",
+            "postLaunchTask": "Run Visualize",
             "env": {
                 "TF_CPP_MIN_LOG_LEVEL": "2",
                 "TF_FORCE_GPU_ALLOW_GROWTH": "true",
