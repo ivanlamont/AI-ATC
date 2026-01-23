@@ -20,10 +20,12 @@
             "type": "shell",
             "command": "python",
             "args": ["visualize_ai_atc.py"],
-            "env": {
-                "TF_CPP_MIN_LOG_LEVEL": "2",
-                "TF_FORCE_GPU_ALLOW_GROWTH": "true",
-                "CUDA_VISIBLE_DEVICES": "0"
+            "options": {
+                "env": {
+                    "TF_CPP_MIN_LOG_LEVEL": "2",
+                    "TF_FORCE_GPU_ALLOW_GROWTH": "true",
+                    "CUDA_VISIBLE_DEVICES": "0"
+                }
             },
             "group": "build",
             "presentation": {
@@ -32,6 +34,33 @@
                 "focus": true,
                 "panel": "shared"
             }
+        },
+        {
+            "label": "Train AI ATC",
+            "type": "shell",
+            "command": "python",
+            "args": ["train_ai_atc.py"],
+            "options": {
+                "env": {
+                    "TF_CPP_MIN_LOG_LEVEL": "2",
+                    "TF_FORCE_GPU_ALLOW_GROWTH": "true",
+                    "CUDA_VISIBLE_DEVICES": "0"
+                }
+            },
+            "isBackground": true,
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Train and Monitor",
+            "dependsOn": ["Train AI ATC", "Launch TensorBoard"],
+            "dependsOrder": "parallel",
+            "group": "build"
         }
     ]
 }
