@@ -2,26 +2,9 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-from airplane import Airplane
+from airplane import MAX_ALTITUDE, MIN_ALTITUDE, Airplane
 
-
-# -----------------------------
-# Constants
-# -----------------------------
-NO_OP = 0
-TURN_LEFT = 1
-TURN_RIGHT = 2
-SPEED_UP = 3
-SLOW_DOWN = 4
-
-ACTION_NAMES = {
-    NO_OP: "NO_OP",
-    TURN_LEFT: "TURN_LEFT",
-    TURN_RIGHT: "TURN_RIGHT",
-    SPEED_UP: "SPEED_UP",
-    SLOW_DOWN: "SLOW_DOWN",
-}
-
+from constants import MAX_ACCEL, MAX_PLANE_COUNT, MAX_TURN_RATE, MAX_VERT_SPEED, MAX_ALTITUDE_CHANGE_PER_STEP
 
 class AIATCEnv(gym.Env):
     """
@@ -32,7 +15,7 @@ class AIATCEnv(gym.Env):
 
     def __init__(
         self,
-        max_planes: int = 3,
+        max_planes: int = MAX_PLANE_COUNT,
         airport_pos: np.ndarray | None = None,
         dt: float = 1.0,
         max_episode_steps: int = 2000,
@@ -95,8 +78,19 @@ class AIATCEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # One discrete action per plane
-        self.action_space = spaces.MultiDiscrete([5] * self.max_planes)
+        # Continuous action space per plane:
+        self.single_plane_action_space = spaces.Box(
+            low=np.array([-1.0, -1.0, -1.0], dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            dtype=np.float32
+        )
+
+        self.action_space = spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(self.max_planes, MAX_PLANE_COUNT),
+            dtype=np.float32
+        )
 
         # -----------------------------
         # State
@@ -118,6 +112,7 @@ class AIATCEnv(gym.Env):
         for i in range(num_planes):
             angle = self.np_random.uniform(0, 2 * np.pi)
             radius = self.np_random.uniform(60.0, 120.0)
+            alt = self.np_random.uniform(12000.0, 24000.0)
 
             pos = self.airport + np.array(
                 [np.cos(angle), np.sin(angle)], dtype=np.float32
@@ -133,6 +128,7 @@ class AIATCEnv(gym.Env):
                 min_speed=self.min_speed,
                 max_speed=self.max_speed,
                 max_turn_rate=self.max_turn_rate,
+                init_altitude=alt,
             )
 
             self.planes.append(plane)
@@ -153,19 +149,27 @@ class AIATCEnv(gym.Env):
         # -----------------------------
         # Apply actions
         # -----------------------------
-        for i, action in enumerate(actions):
-            if i >= len(self.planes):
+        for i, plane in enumerate(self.planes):
+            if plane.landed:
                 continue
 
-            plane = self.planes[i]
-            issued = plane.apply_action(
-                action=action,
-                turn_delta=self.turn_delta,
-                speed_delta=self.speed_delta,
+            turn_norm, accel_norm, vs_norm = actions[i]
+
+            desired_turn_rate = turn_norm * MAX_TURN_RATE
+            desired_accel = accel_norm * MAX_ACCEL
+            target_alt_delta = vs_norm * MAX_ALTITUDE_CHANGE_PER_STEP
+            plane.target_altitude += target_alt_delta
+            plane.target_altitude = np.clip(
+                plane.target_altitude,
+                MIN_ALTITUDE,
+                MAX_ALTITUDE
             )
 
-            if issued:
-                instruction_count += 1
+            plane.apply_control(
+                desired_turn_rate,
+                desired_accel,
+                dt=self.dt
+            )
 
         # -----------------------------
         # Physics update
@@ -173,6 +177,7 @@ class AIATCEnv(gym.Env):
         for plane in self.planes:
             plane.step(self.dt)
             reward -= self.turn_rate_penalty * abs(plane.current_turn_rate)
+            reward -= 0.1* abs((plane.altitude - plane.target_altitude) / 1000.0)
 
         # -----------------------------
         # Landing checks

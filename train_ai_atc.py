@@ -2,10 +2,8 @@ import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, VecMonitor
 from ai_atc_env import AIATCEnv
+from constants import LOG_DIR, MODEL_DIR
 from visualize_ai_atc import create_visualization
-
-LOG_DIR = "tensorboard"
-MODEL_DIR = "models"
 
 def perform_training():
     os.makedirs(LOG_DIR, exist_ok=True)
@@ -42,11 +40,14 @@ def perform_training():
     model.learn(total_timesteps=1_000_000)
 
     # --- Save model AND normalization stats ---
-    model.save(f"{MODEL_DIR}/ai_atc_ppo")
+    saved_model = f"{MODEL_DIR}/ai_atc_ppo"
+    model.save(saved_model)
     env.save(f"{MODEL_DIR}/vecnormalize.pkl")
 
     env.close()
 
+    return saved_model
+
 if __name__ == "__main__":
-    perform_training()
-    create_visualization()
+    model_path = perform_training()
+    create_visualization(model_path=model_path)

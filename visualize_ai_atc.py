@@ -3,142 +3,152 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 
 from stable_baselines3 import PPO
-from ai_atc_env import AIATCEnv, ACTION_NAMES, NO_OP
 
+from ai_atc_env import AIATCEnv
+from constants import (
+    MAX_PLANE_COUNT,
+    MAX_TURN_RATE,
+    MAX_ACCEL,
+    MAX_VERT_SPEED,
+    MODEL_DIR,
+)
 
-# -----------------------------
-# Config
-# -----------------------------
-MODEL_PATH = "models/ai_atc_ppo"
 MAX_STEPS = 1500
 OUTPUT_VIDEO = "visualizations/ai_atc_demo.mp4"
 FPS = 30
 
-AIRPORT_COLOR = "red"
-PLANE_COLOR = "blue"
-LANDED_COLOR = "green"
-
-
-def create_visualization():
+def create_visualization(
+    model_path=f"{MODEL_DIR}/ai_atc_ppo",
+    interval_ms=200,
+    max_trail=100,
+):
+    """
+    Launch interactive visualization of trained ATC model.
+    """
 
     # -----------------------------
-    # Load environment & model
+    # Load env + model
     # -----------------------------
-    env = AIATCEnv(max_planes=3)
-    model = PPO.load(MODEL_PATH, device="cpu")  # CPU is fine for inference
+    env = AIATCEnv(max_planes=MAX_PLANE_COUNT)
+    model = PPO.load(model_path)
 
-    obs_holder = [None]
-    obs_holder[0], _ = env.reset()
-
+    obs, _ = env.reset()
 
     # -----------------------------
     # Matplotlib setup
     # -----------------------------
-    fig, ax = plt.subplots(figsize=(7, 7))
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_title("AI-ATC — Trained Policy Visualization")
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_title("AI ATC - Continuous Control")
 
-    airport_dot, = ax.plot(
-        env.airport[0],
-        env.airport[1],
-        marker="X",
-        markersize=12,
-        color=AIRPORT_COLOR,
-        label="Airport",
-    )
+    airport = env.airport
+    ax.plot(airport[0], airport[1], "ks", markersize=10, label="Airport")
 
     plane_dots = []
-    heading_lines = []
+    text_boxes = []
 
-    for _ in range(env.max_planes):
-        dot, = ax.plot([], [], "o", color=PLANE_COLOR)
-        line, = ax.plot([], [], "-", linewidth=1)
+    for i in range(len(env.planes)):
+        dot, = ax.plot([], [], "o", label=f"Plane {i}")
         plane_dots.append(dot)
-        heading_lines.append(line)
 
-    ax.legend(loc="upper right")
+        txt = ax.text(0, 0, "", fontsize=9)
+        text_boxes.append(txt)
 
-
-    # -----------------------------
-    # Storage for trajectory scaling
-    # -----------------------------
-    all_positions = []
-
+    ax.set_aspect("equal")
+    ax.legend()
 
     # -----------------------------
-    # Animation update
+    # History for trails
     # -----------------------------
-    def update(frame_idx):
+    pos_hist = [[] for _ in env.planes]
 
-        actions, _ = model.predict(obs_holder[0], deterministic=True)
+    # -----------------------------
+    # Update loop
+    # -----------------------------
+    def update(frame):
+        nonlocal obs
 
-        # Debug print issued instructions
-        for i, action in enumerate(actions):
-            if i < len(env.planes):
-                plane = env.planes[i]
-                if not plane.landed and action != NO_OP:
-                    print(f"[ATC] Plane {plane.id}: {ACTION_NAMES[action]}")
-
-        obs_holder[0], reward, terminated, truncated, _ = env.step(actions)
-    
-        all_positions.clear()
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = env.step(action)
 
         for i, plane in enumerate(env.planes):
-
-            dot = plane_dots[i]
-            line = heading_lines[i]
-
             if plane.landed:
-                dot.set_data([plane.pos[0]], [plane.pos[1]])
-                dot.set_color(LANDED_COLOR)
-                line.set_data([], [])
                 continue
 
             x, y = plane.pos
-            all_positions.append((x, y))
+            pos_hist[i].append((x, y))
 
-            dot.set_data([x], [y])
-            dot.set_color(PLANE_COLOR)
+            # Trail
+            trail = pos_hist[i][-max_trail:]
+            xs = [p[0] for p in trail]
+            ys = [p[1] for p in trail]
 
-            # Heading visualization
-            heading_len = 6.0
-            hx = x + np.cos(plane.heading) * heading_len
-            hy = y + np.sin(plane.heading) * heading_len
-            line.set_data([x, hx], [y, hy])
+            plane_dots[i].set_data(xs[-1:], ys[-1:])
 
-        # Auto-scale view
-        if all_positions:
-            xs, ys = zip(*all_positions)
-            pad = 20
-            ax.set_xlim(min(xs) - pad, max(xs) + pad)
-            ax.set_ylim(min(ys) - pad, max(ys) + pad)
+            # -----------------------------
+            # Decode continuous actions
+            # -----------------------------
+            turn_norm, accel_norm, alt_norm = action[i]
 
-        if terminated or truncated or frame_idx >= MAX_STEPS or all(plane.landed for plane in env.planes):
-            anim.event_source.stop()
+            turn_rate = turn_norm * MAX_TURN_RATE
+            accel = accel_norm * MAX_ACCEL
+            desired_vs = alt_norm * MAX_VERT_SPEED
 
-        return plane_dots + heading_lines
+            alt_err = plane.target_altitude - plane.altitude
 
+            # -----------------------------
+            # Human-readable ATC overlay
+            # -----------------------------
+            text = (
+                f"Plane {i}\n"
+                f"Hdg: {np.degrees(plane.heading)%360:6.1f}°\n"
+                f"Spd: {plane.speed:6.1f}\n"
+                f"Alt: {plane.altitude:6.0f} ft\n"
+                f"Tgt: {plane.target_altitude:6.0f} ft\n"
+                f"\nCmd:\n"
+                f"Turn: {np.degrees(turn_rate):+5.2f}°/s\n"
+                f"Accel: {accel:+5.2f}\n"
+                f"VS cmd: {desired_vs:+6.0f} fpm\n"
+                f"Alt err: {alt_err:+6.0f} ft\n"
+            )
+
+            text_boxes[i].set_position((x + 2, y + 2))
+            text_boxes[i].set_text(text)
+
+        ax.relim()
+        ax.autoscale_view()
+
+        # -----------------------------
+        # Episode reset handling
+        # -----------------------------
+        if terminated or truncated:
+            print("Episode finished, resetting visualization.")
+            obs, _ = env.reset()
+            for hist in pos_hist:
+                hist.clear()
+
+        return plane_dots + text_boxes
 
     # -----------------------------
     # Run animation
     # -----------------------------
-    anim = FuncAnimation(
+    ani = FuncAnimation(
         fig,
         update,
-        frames=MAX_STEPS,
-        interval=1000 / FPS,
-        blit=False,
+        interval=interval_ms,
+        cache_frame_data=False,
     )
-
+    plt.show()
 
     # -----------------------------
     # Save video
     # -----------------------------
     writer = FFMpegWriter(fps=FPS)
-    anim.save(OUTPUT_VIDEO, writer=writer)
+    ani.save(OUTPUT_VIDEO, writer=writer)
 
     print(f"Saved visualization to {OUTPUT_VIDEO}")
 
+# -----------------------------
+# Script entry point
+# -----------------------------
 if __name__ == "__main__":
     create_visualization()
-
