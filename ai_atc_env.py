@@ -19,9 +19,11 @@ class AIATCEnv(gym.Env):
         airport_pos: np.ndarray | None = None,
         dt: float = 1.0,
         max_episode_steps: int = 2000,
+        render_mode: str | None = None,
     ):
         super().__init__()
 
+        self.render_mode = render_mode
         # -----------------------------
         # Core config
         # -----------------------------
@@ -151,25 +153,30 @@ class AIATCEnv(gym.Env):
         # -----------------------------
         for i, plane in enumerate(self.planes):
             if plane.landed:
+                reward += +1000.0
                 continue
 
-            turn_norm, accel_norm, vs_norm = actions[i]
+            heading_cmd_norm, speed_cmd_norm, altitude_cmd_norm = actions[i]
 
-            desired_turn_rate = turn_norm * MAX_TURN_RATE
-            desired_accel = accel_norm * MAX_ACCEL
-            target_alt_delta = vs_norm * MAX_ALTITUDE_CHANGE_PER_STEP
-            plane.target_altitude += target_alt_delta
-            plane.target_altitude = np.clip(
-                plane.target_altitude,
-                MIN_ALTITUDE,
-                MAX_ALTITUDE
-            )
+            instruction_count += plane.set_targets(heading_cmd_norm, speed_cmd_norm, altitude_cmd_norm)
 
-            plane.apply_control(
-                desired_turn_rate,
-                desired_accel,
-                dt=self.dt
-            )
+            # desired_turn_rate = heading_cmd_norm * MAX_TURN_RATE
+            # desired_accel = speed_cmd_norm * MAX_ACCEL
+            # target_alt_delta = altitude_cmd_norm * MAX_ALTITUDE_CHANGE_PER_STEP
+            # plane.target_altitude += target_alt_delta
+            # plane.target_altitude = np.clip(
+            #     plane.target_altitude,
+            #     MIN_ALTITUDE,
+            #     MAX_ALTITUDE
+            # )
+
+            # plane.apply_control(
+            #     desired_turn_rate,
+            #     desired_accel,
+            #     dt=self.dt
+            # )
+            # plane.pilot_heading_control(self.dt)
+            # plane.pilot_altitude_control(self.dt)
 
         # -----------------------------
         # Physics update

@@ -17,28 +17,21 @@ MAX_STEPS = 1500
 OUTPUT_VIDEO = "visualizations/ai_atc_demo.mp4"
 FPS = 30
 
-def create_visualization(
-    model_path=f"{MODEL_DIR}/ai_atc_ppo",
-    interval_ms=200,
-    max_trail=100,
-):
-    """
-    Launch interactive visualization of trained ATC model.
-    """
+from matplotlib.animation import FFMpegWriter
 
-    # -----------------------------
-    # Load env + model
-    # -----------------------------
-    env = AIATCEnv(max_planes=MAX_PLANE_COUNT)
+def create_visualization(
+    model_path=MODEL_DIR,
+    output_path="atc_demo.mp4",
+    max_steps=600,
+    fps=10,
+):
+    env = AIATCEnv(max_planes=MAX_PLANE_COUNT, render_mode=None)
     model = PPO.load(model_path)
 
     obs, _ = env.reset()
 
-    # -----------------------------
-    # Matplotlib setup
-    # -----------------------------
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_title("AI ATC - Continuous Control")
+    ax.set_title("AI ATC - Episode Playback")
 
     airport = env.airport
     ax.plot(airport[0], airport[1], "ks", markersize=10, label="Airport")
@@ -49,103 +42,42 @@ def create_visualization(
     for i in range(len(env.planes)):
         dot, = ax.plot([], [], "o", label=f"Plane {i}")
         plane_dots.append(dot)
-
-        txt = ax.text(0, 0, "", fontsize=9)
-        text_boxes.append(txt)
+        text_boxes.append(ax.text(0, 0, "", fontsize=9))
 
     ax.set_aspect("equal")
     ax.legend()
 
-    # -----------------------------
-    # History for trails
-    # -----------------------------
-    pos_hist = [[] for _ in env.planes]
+    writer = FFMpegWriter(fps=fps)
 
-    # -----------------------------
-    # Update loop
-    # -----------------------------
-    def update(frame):
-        nonlocal obs
+    with writer.saving(fig, output_path, dpi=150):
+        for step in range(max_steps):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, _ = env.step(action)
 
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(action)
+            for i, plane in enumerate(env.planes):
+                if plane.landed:
+                    continue
 
-        for i, plane in enumerate(env.planes):
-            if plane.landed:
-                continue
+                x, y = plane.pos
+                plane_dots[i].set_data([x], [y])
 
-            x, y = plane.pos
-            pos_hist[i].append((x, y))
+                text_boxes[i].set_position((x + 2, y + 2))
+                text_boxes[i].set_text(
+                    f"P{i} Alt:{plane.altitude:.0f} "
+                    f"Tgt:{plane.target_altitude:.0f}"
+                )
 
-            # Trail
-            trail = pos_hist[i][-max_trail:]
-            xs = [p[0] for p in trail]
-            ys = [p[1] for p in trail]
+            ax.relim()
+            ax.autoscale_view()
 
-            plane_dots[i].set_data(xs[-1:], ys[-1:])
+            writer.grab_frame()
 
-            # -----------------------------
-            # Decode continuous actions
-            # -----------------------------
-            turn_norm, accel_norm, alt_norm = action[i]
+            if terminated or truncated:
+                print(f"Episode finished at step {step}")
+                break
 
-            turn_rate = turn_norm * MAX_TURN_RATE
-            accel = accel_norm * MAX_ACCEL
-            desired_vs = alt_norm * MAX_VERT_SPEED
+    print(f"Saved video to {output_path}")
 
-            alt_err = plane.target_altitude - plane.altitude
-
-            # -----------------------------
-            # Human-readable ATC overlay
-            # -----------------------------
-            text = (
-                f"Plane {i}\n"
-                f"Hdg: {np.degrees(plane.heading)%360:6.1f}°\n"
-                f"Spd: {plane.speed:6.1f}\n"
-                f"Alt: {plane.altitude:6.0f} ft\n"
-                f"Tgt: {plane.target_altitude:6.0f} ft\n"
-                f"\nCmd:\n"
-                f"Turn: {np.degrees(turn_rate):+5.2f}°/s\n"
-                f"Accel: {accel:+5.2f}\n"
-                f"VS cmd: {desired_vs:+6.0f} fpm\n"
-                f"Alt err: {alt_err:+6.0f} ft\n"
-            )
-
-            text_boxes[i].set_position((x + 2, y + 2))
-            text_boxes[i].set_text(text)
-
-        ax.relim()
-        ax.autoscale_view()
-
-        # -----------------------------
-        # Episode reset handling
-        # -----------------------------
-        if terminated or truncated:
-            print("Episode finished, resetting visualization.")
-            obs, _ = env.reset()
-            for hist in pos_hist:
-                hist.clear()
-
-        return plane_dots + text_boxes
-
-    # -----------------------------
-    # Run animation
-    # -----------------------------
-    ani = FuncAnimation(
-        fig,
-        update,
-        interval=interval_ms,
-        cache_frame_data=False,
-    )
-    plt.show()
-
-    # -----------------------------
-    # Save video
-    # -----------------------------
-    writer = FFMpegWriter(fps=FPS)
-    ani.save(OUTPUT_VIDEO, writer=writer)
-
-    print(f"Saved visualization to {OUTPUT_VIDEO}")
 
 # -----------------------------
 # Script entry point
