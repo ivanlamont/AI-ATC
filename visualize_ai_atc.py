@@ -1,27 +1,36 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 
 from stable_baselines3 import PPO
 
 from ai_atc_env import AIATCEnv
+from airplane import MIN_ALTITUDE, MAX_ALTITUDE
 from constants import (
     MAX_PLANE_COUNT,
     MAX_TURN_RATE,
     MAX_ACCEL,
     MAX_VERT_SPEED,
     MODEL_DIR,
+    MODEL_OUTPUT,
+    OUTPUT_VIDEO,
+)
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*Protobuf gencode version.*"
 )
 
 MAX_STEPS = 1500
-OUTPUT_VIDEO = "visualizations/ai_atc_demo.mp4"
 FPS = 30
 
 from matplotlib.animation import FFMpegWriter
 
 def create_visualization(
-    model_path=MODEL_DIR,
-    output_path="atc_demo.mp4",
+    model_path=MODEL_OUTPUT,
+    output_path=OUTPUT_VIDEO,
     max_steps=600,
     fps=10,
 ):
@@ -44,8 +53,19 @@ def create_visualization(
         plane_dots.append(dot)
         text_boxes.append(ax.text(0, 0, "", fontsize=9))
 
+    ax.set_xlim(-150, 150)
+    ax.set_ylim(-150, 150)
+    # ax.relim()
+    # ax.autoscale_view()
+
     ax.set_aspect("equal")
     ax.legend()
+
+    # Add colorbar for altitude
+    sm = cm.ScalarMappable(cmap='viridis', norm=plt.Normalize(vmin=MIN_ALTITUDE, vmax=MAX_ALTITUDE))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax)
+    cbar.set_label('Altitude (ft)')
 
     writer = FFMpegWriter(fps=fps)
 
@@ -58,8 +78,11 @@ def create_visualization(
                 if plane.landed:
                     continue
 
-                x, y = plane.pos
+                x, y = plane.position_nm
+                alt_norm = (plane.altitude - MIN_ALTITUDE) / (MAX_ALTITUDE - MIN_ALTITUDE)
+                color = cm.viridis(alt_norm)
                 plane_dots[i].set_data([x], [y])
+                plane_dots[i].set_color(color)
 
                 text_boxes[i].set_position((x + 2, y + 2))
                 text_boxes[i].set_text(

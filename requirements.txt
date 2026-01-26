@@ -3,3 +3,4 @@ gymnasium
 numpy
 shimmy>=2.0
 matplotlib
+protobuf < 6

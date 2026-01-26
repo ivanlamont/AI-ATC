@@ -27,3 +27,7 @@ MAX_TURN_RATE = np.deg2rad(3.0)   # 3 deg/sec
 MAX_ACCEL = 5.0                  # knots/sec
 MAX_VERT_SPEED = 2500.0          # ft/min
 MAX_ALTITUDE_CHANGE_PER_STEP = 2500.0  # ft per step
+
+OUTPUT_VIDEO = "visualizations/ai_atc_demo.mp4"
+MODEL_DIR = "models"
+MODEL_OUTPUT = f"{MODEL_DIR}/ai_atc_ppo"

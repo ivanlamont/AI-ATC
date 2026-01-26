@@ -1,18 +1,21 @@
 # ✈️ AI-ATC — Reinforcement Learning Air Traffic Control Simulator
 
-AI-ATC is an experimental reinforcement learning project that explores how an AI agent can act as a simplified **air traffic controller**, issuing navigation instructions to guide an aircraft toward an airport using the fewest possible commands.
+This project implements a physics-based, multi-aircraft air traffic control (ATC) simulator trained using Proximal Policy Optimization (PPO). The system models hierarchical control, where the RL agent issues high-level ATC clearances (heading, speed, altitude), and a simulated pilot executes these clearances via realistic control laws and aircraft dynamics.
 
-The project is intentionally minimal at first, focusing on **fast iteration, correctness, and learning dynamics**, with a roadmap toward more realistic air traffic control scenarios.
+The project focuses on reward shaping, curriculum learning, safety constraints, and control abstraction to solve a sparse-reward, safety-critical, multi-agent control problem.
 
 ---
 
 ## 🚀 Project Goals
 
-* Demonstrate **applied reinforcement learning** skills using modern tooling
-* Build a controllable, extensible simulation environment
-* Train an agent to efficiently guide an aircraft to a destination
-* Provide clear visualization of learned behavior
-* Scale from a toy problem to a realistic ATC simulation
+* Designed hierarchical RL architecture separating decision policy from low-level control
+* Implemented curriculum learning across flight phases (vectoring, descent, approach, landing)
+* Engineered dense shaping rewards to solve sparse terminal objective
+* Built physics-based aircraft dynamics with envelope protection
+* Designed discrete ATC-style action space to stabilize PPO training
+* Implemented multi-agent separation constraints and safety penalties
+* Developed evaluation and visualization pipeline for trained policies
+* Built unit tests for reward functions and environment correctness
 
 ---
 
