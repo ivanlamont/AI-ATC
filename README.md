@@ -81,4 +81,16 @@ AI-ATC/
 * NVIDIA GPU (tested on RTX 40-series)
 * NVIDIA drivers installed
 * Docker + NVIDIA Container Toolkit
-* VS Code with Dev Containe
+* VS Code with Dev Containers
+
+
+
+## �️ Roadmap
+
+* Integration with the real world - pulling live aircraft from ADSBexchange and pulling real-world approach plates
+* Add a UI that allows humans to stream audio via STT to compete with the trained engine for landings per hour
+* Add wind, weather, runway changes
+
+
+
+
