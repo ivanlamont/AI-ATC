@@ -42,7 +42,7 @@ def create_visualization(
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.set_title("AI ATC - Episode Playback")
 
-    airport = env.airport
+    airport = env.airport.position_nm
     ax.plot(airport[0], airport[1], "ks", markersize=10, label="Airport")
 
     plane_dots = []
@@ -53,8 +53,14 @@ def create_visualization(
         plane_dots.append(dot)
         text_boxes.append(ax.text(0, 0, "", fontsize=9))
 
-    ax.set_xlim(-150, 150)
-    ax.set_ylim(-150, 150)
+    # Find the highest absolute position to set dynamic limits
+    max_pos = 0
+    for plane in env.planes:
+        x, y = plane.position_nm
+        max_pos = max(max_pos, abs(x), abs(y))
+
+    ax.set_xlim(-max_pos - 10, max_pos + 10)
+    ax.set_ylim(-max_pos - 10, max_pos + 10)
     # ax.relim()
     # ax.autoscale_view()
 
@@ -87,6 +93,7 @@ def create_visualization(
                 text_boxes[i].set_position((x + 2, y + 2))
                 text_boxes[i].set_text(
                     f"P{i} Alt:{plane.altitude:.0f} "
+                    f"reward:{reward:.0f}"
                     f"Tgt:{plane.target_altitude:.0f}"
                 )
 

@@ -1,13 +1,14 @@
 import numpy as np
 import pytest
 from airplane import Airplane
+from airport import Airport
 
 @pytest.fixture
 def arrival_plane():
     return Airplane(
         plane_id=1,
         position_nm=np.array([10.0, 0.0], dtype=np.float32),  # 10 NM out
-        destination_nm=np.array([0.0, 0.0], dtype=np.float32),
+        destination_nm=Airport(np.array([0.0, 0.0], dtype=np.float32), 0.0),
         heading_rads=0.0,
         speed_kts=180.0,
         min_speed_kts=120.0,

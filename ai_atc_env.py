@@ -3,8 +3,10 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from airplane import MAX_ALTITUDE, MIN_ALTITUDE, Airplane
+from runway import Runway
+from airport import Airport
 
-from constants import MAX_ACCEL, MAX_PLANE_COUNT, MAX_TURN_RATE, MAX_VERT_SPEED, MAX_ALTITUDE_CHANGE_PER_STEP
+from constants import CLEARANCE_INTERVAL_S, INITIAL_SPACING_NM, MAX_ACCEL, MAX_PLANE_COUNT, MAX_TURN_RATE, MAX_VERT_SPEED, MAX_ALTITUDE_CHANGE_PER_STEP, MAX_SIM_SECONDS
       
 class AIATCEnv(gym.Env):
     """
@@ -29,20 +31,31 @@ class AIATCEnv(gym.Env):
         # Core config
         # -----------------------------
         self.max_planes = max_planes
+        self.sim_time = 0.0
+        self.step_count = 0
         self.dt = dt
         self.max_episode_steps = max_episode_steps
 
-        self.airport = (
-            airport_pos.astype(np.float32)
-            if airport_pos is not None
-            else np.array([0.0, 0.0], dtype=np.float32)
+        self.airport = Airport(
+            position_nm=(
+                airport_pos.astype(np.float32)
+                if airport_pos is not None
+                else np.array([0.0, 0.0], dtype=np.float32)
+            ),
+            altitude_ft=0.0
+        )
+
+        self.runway = Runway(
+            airport=self.airport,
+            runway_heading_deg=270.0,  # example: RWY 27
+            faf_distance_nm=6.0,
         )
 
         # -----------------------------
         # Aircraft dynamics
         # -----------------------------
         self.turn_delta = np.deg2rad(3.0)
-        self.max_turn_rate = np.deg2rad(5.0)
+        self.max_turn_rate = np.deg2rad(3.0)
 
         self.speed_delta = 0.5
 
@@ -89,11 +102,10 @@ class AIATCEnv(gym.Env):
             3,  # altitude clearance
         ])
 
-
         self.action_space = spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(self.max_planes, MAX_PLANE_COUNT),
+            shape=(self.max_planes, 3),     # three axes of control
             dtype=np.float32
         )
 
@@ -101,7 +113,6 @@ class AIATCEnv(gym.Env):
         # State
         # -----------------------------
         self.planes: list[Airplane] = []
-        self.step_count = 0
 
     # -----------------------------
     # Curriculum based training
@@ -109,32 +120,39 @@ class AIATCEnv(gym.Env):
     def set_curriculum_stage(self, stage: int):
         self.curriculum_stage = stage
 
-    def add_new_plane(self):
-        plane_id = len(self.planes)
+    def spawn_on_final(self, plane_id, distance_nm, altitude_ft, intercept_deg=0.0):
+        """
+        Spawn aircraft on localizer or with intercept angle.
+        """
+        loc_dir = self.runway.localizer_dir
+        outbound = self.runway.outbound_dir
 
-        angle = self.np_random.uniform(0, 2 * np.pi)
-        radius = self.np_random.uniform(60.0, 120.0)
-        alt = self.np_random.uniform(12000.0, 24000.0)
+        # Base position on final
+        pos_nm = self.airport.position_nm + outbound * distance_nm
 
-        pos = self.airport + np.array(
-            [np.cos(angle), np.sin(angle)], dtype=np.float32
-        ) * radius
-
-        heading = angle + np.pi  # roughly toward airport
+        # Intercept heading offset
+        heading = np.arctan2(loc_dir[1], loc_dir[0])
+        heading += np.deg2rad(intercept_deg)
 
         plane = Airplane(
             plane_id=plane_id,
-            position_nm=pos,
+            position_nm=pos_nm,
             destination_nm=self.airport,
             heading_rads=heading,
             speed_kts=self.initial_speed,
             min_speed_kts=self.min_speed,
             max_speed_kts=self.max_speed,
             max_turn_rate_rads=self.max_turn_rate,
-            init_altitude_ft=alt,
+            init_altitude_ft=altitude_ft,
+            is_arrival=True,
         )
 
-        self.planes.append(plane)
+        # Bias targets for realism
+        plane.target_heading = np.arctan2(loc_dir[1], loc_dir[0])
+        plane.target_altitude = 0.0  # For arrivals, descend to airport altitude
+        plane.target_speed = plane.speed
+
+        return plane
 
     # -----------------------------
     # Reset
@@ -142,21 +160,96 @@ class AIATCEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
+        self.sim_time = 0.0
         self.step_count = 0
         self.planes = []
 
         num_planes = self.max_planes
     
         for i in range(num_planes):
-            self.add_new_plane()
+
+            if self.curriculum_stage == 0:
+                # -------------------------
+                # Stage 0: 10 NM final, 2000 ft, on localizer
+                # -------------------------
+                plane = self.spawn_on_final(
+                    plane_id=i,
+                    distance_nm=6.0 + (INITIAL_SPACING_NM * i),
+                    altitude_ft=2000.0 + (1000.0 * i),
+                    intercept_deg=0.0
+                )
+
+            elif self.curriculum_stage == 1:
+                # -------------------------
+                # Stage 1: 6-18 NM, 5000 ft, 20 deg intercept
+                # -------------------------
+                good_airplane_location = False
+                while not good_airplane_location:
+                    d = self.np_random.uniform(6.0, 18.0)
+                    intercept = self.np_random.choice([-20.0, 20.0])
+                    alt = d * 400
+                    plane = self.spawn_on_final(
+                        plane_id=i,
+                        distance_nm=d,
+                        altitude_ft=alt,
+                        intercept_deg=intercept
+                    )                    
+                    good_airplane_location = not self.position_violates_separation(plane)
+
+            elif self.curriculum_stage >= 2:
+                # -------------------------
+                # Stage 2+: Randomized terminal area
+                # -------------------------
+                angle = self.np_random.uniform(0, 2 * np.pi)
+                radius = self.np_random.uniform(15.0, 30.0)
+                alt = self.np_random.uniform(4.0, 12.0) * 1000.0
+
+                pos = self.airport.position_nm + np.array(
+                    [np.cos(angle), np.sin(angle)], dtype=np.float32
+                ) * radius
+
+                heading = angle + np.pi  # rough inbound
+
+                plane = Airplane(
+                    plane_id=i,
+                    position_nm=pos,
+                    destination_nm=self.airport,
+                    heading_rads=heading,
+                    speed_kts=self.initial_speed,
+                    min_speed_kts=self.min_speed,
+                    max_speed_kts=self.max_speed,
+                    max_turn_rate_rads=self.max_turn_rate,
+                    init_altitude_ft=alt,
+                    is_arrival=True,
+                )
+
+            plane.target_altitude = 0.0
+            plane.prev_dist_nm = np.linalg.norm(
+                plane.position_nm - self.airport.position_nm
+            )
+
+            self.planes.append(plane)
 
         return self._get_obs(), {}
+    
+    def position_violates_separation(self, new_plane) -> bool:
+        for plane in self.planes:
+            if self.separation_violated(plane, new_plane):
+                return True
+        return False
+
+    def separation_violated(self, p1, p2) -> bool:
+        if abs(p1.altitude - p2.altitude) >= 2000.0:
+            return False
+        d = np.linalg.norm(p1.position_nm - p2.position_nm)
+        return d < self.min_separation
 
     # -----------------------------
     # Step
     # -----------------------------
     def step(self, actions):
         self.step_count += 1
+        self.sim_time += self.dt
         reward = 0.0
         terminated = False
         truncated = False
@@ -171,9 +264,25 @@ class AIATCEnv(gym.Env):
                 reward += +1000.0
                 continue
 
-            heading_cmd_norm, speed_cmd_norm, altitude_cmd_norm = actions[i]
+            turn_norm, accel_norm, vs_norm = actions[i]
+            if self.sim_time - plane.last_clearance_time < CLEARANCE_INTERVAL_S:
+                # ignore non-maintain actions
+                turn_norm = 0.0
+                accel_norm = 0.0
+                vs_norm = 0.0
+            else:
+                plane.last_clearance_time = self.sim_time
 
-            instruction_count += plane.set_targets(heading_cmd_norm, speed_cmd_norm, altitude_cmd_norm)
+            turn_rate = turn_norm * self.max_turn_rate
+            accel = accel_norm * MAX_ACCEL
+            vert_speed = vs_norm * MAX_VERT_SPEED
+
+            instruction_count += plane.apply_atc_clearance(
+                turn_rate_cmd=turn_rate,
+                accel_cmd=accel,
+                vert_speed_cmd=vert_speed,
+                dt=self.dt
+            )
 
         # -----------------------------
         # Physics update
@@ -188,7 +297,7 @@ class AIATCEnv(gym.Env):
         # -----------------------------
         landed_this_step = 0
         for plane in self.planes:
-            if plane.check_landing(self.airport, self.landing_radius):
+            if plane.check_landing(self.airport.position_nm, self.landing_radius):
                 reward += self.landing_reward
                 landed_this_step += 1
 
@@ -201,8 +310,7 @@ class AIATCEnv(gym.Env):
                 if p1.landed or p2.landed:
                     continue
 
-                d = np.linalg.norm(p1.position_nm - p2.position_nm)
-                if d < self.min_separation:
+                if self.separation_violated(p1, p2):
                     reward -= self.collision_penalty
                     terminated = True
 
@@ -220,7 +328,7 @@ class AIATCEnv(gym.Env):
         for plane in self.planes:
             if plane.landed:
                 continue
-            if np.linalg.norm(plane.position_nm - self.airport) > self.max_distance:
+            if np.linalg.norm(plane.position_nm - self.airport.position_nm) > self.max_distance:
                 terminated = True
                 reward -= 50.0
 
@@ -233,6 +341,10 @@ class AIATCEnv(gym.Env):
 
         if self.step_count >= self.max_episode_steps:
             truncated = True
+            
+        if self.sim_time >= MAX_SIM_SECONDS:
+            truncated = True
+
 
         return self._get_obs(), reward, terminated, truncated, {}
 
@@ -255,7 +367,7 @@ class AIATCEnv(gym.Env):
                 if p.landed:
                     obs.extend([0, 0, 0, 0, 1])
                 else:
-                    dx, dy = p.position_nm - self.airport
+                    dx, dy = p.position_nm - self.airport.position_nm
                     obs.extend([dx, dy, p.speed, p.heading, 0])
             else:
                 obs.extend([0, 0, 0, 0, 1])

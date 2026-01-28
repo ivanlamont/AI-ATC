@@ -1,5 +1,6 @@
 import numpy as np
 import constants
+from conversion import wrap_angle
 
 # -----------------------------
 # Units:
@@ -26,9 +27,8 @@ APPROACH_SPEED = 150.0     # knots
 
 TERMINAL_RADIUS = 20.0     # NM
 
-VERTICAL_WRONG_DIRECTION_PENALTY = -0.2
-VERTICAL_RIGHT_DIRECTION_REWARD = 0.1
-
+VERTICAL_WRONG_DIRECTION_PENALTY = -1.0
+VERTICAL_RIGHT_DIRECTION_REWARD = 1.0
 
 class Airplane:
     def __init__(
@@ -45,7 +45,8 @@ class Airplane:
         is_arrival: bool = True,
     ):
         self.id = plane_id
-
+        self.last_clearance_time = 0.0
+        
         # -----------------------------
         # State (truth)
         # -----------------------------
@@ -56,6 +57,7 @@ class Airplane:
         self.altitude = init_altitude_ft                 # ft
         self.vert_speed = 0.0                         # ft/min
         self.current_turn_rate = 0.0                  # rad/sec
+        self.accel = 0.0                              # knots/sec
 
         # -----------------------------
         # Targets (ATC commands)
@@ -75,81 +77,18 @@ class Airplane:
         # Meta
         # -----------------------------
         self.heading_error_deg = 0.0
+        self.dist_to_faf = np.inf
+        self.prev_dist_nm = np.inf
         self.landed = False
         self.is_arrival = is_arrival
         self.destination = destination_nm  # NM
 
-    # -----------------------------
-    # ATC command interface
-    # -----------------------------
-    def set_targets(self, heading_cmd_norm, speed_cmd_norm, altitude_cmd_norm):
-        """
-        heading_cmd_norm: [-1,1] → [0, 2pi]
-        speed_cmd_norm:   absolute knots
-        altitude_cmd_norm: absolute ft
-        """
 
-        new_heading = (heading_cmd_norm + 1.0) * np.pi
-        new_speed = speed_cmd_norm
-        new_altitude = altitude_cmd_norm
-
-        instruction_count = 0
-
-        # Heading
-        if abs((self.target_heading - new_heading + np.pi) % (2*np.pi) - np.pi) > np.deg2rad(1.0):
-            self.target_heading = new_heading
-            instruction_count += 1
-
-        # Speed
-        if abs(self.target_speed - new_speed) > 5.0:
-            self.target_speed = np.clip(new_speed, self.min_speed, self.max_speed)
-            instruction_count += 1
-
-        # Altitude
-        if abs(self.target_altitude - new_altitude) > 100.0:
-            self.target_altitude = np.clip(new_altitude, MIN_ALTITUDE, MAX_ALTITUDE)
-            instruction_count += 1
-
-        return instruction_count
-
-    # -----------------------------
-    # Pilot controllers
-    # -----------------------------
-    def pilot_speed_control(self, dt):
-        speed_error = self.target_speed - self.speed
-        accel = SPEED_KP * speed_error
-        accel = np.clip(accel, -constants.MAX_ACCEL, constants.MAX_ACCEL)
-        self.speed += accel
-        self.speed = np.clip(self.speed, self.min_speed, self.max_speed)
-
-    def pilot_heading_control(self, dt):
-        heading_err = (self.target_heading - self.heading + np.pi) % (2*np.pi) - np.pi
-        turn_rate_cmd = HEADING_KP * heading_err
-
-        max_turn = self.max_turn_rate
-        self.current_turn_rate = np.clip(turn_rate_cmd, -max_turn, max_turn)
-        self.heading_error_deg = np.rad2deg(heading_err)
-
-    def pilot_altitude_control(self, dt):
-        alt_error = self.target_altitude - self.altitude
-
-        if abs(alt_error) < ALT_DEADBAND:
-            vs_cmd = 0.0
-        else:
-            vs_cmd = ALTITUDE_KP * alt_error * 60.0  # scale to ft/min
-
-        vs_cmd = np.clip(vs_cmd, -MAX_VERT_SPEED, MAX_VERT_SPEED)
-
-        max_vs_delta = MAX_VERT_ACCEL * (dt / 60.0)
-        vs_error = vs_cmd - self.vert_speed
-        vs_change = np.clip(vs_error, -max_vs_delta, max_vs_delta)
-
-        self.vert_speed += vs_change
-
-    def apply_control(self, dt):
-        self.pilot_speed_control(dt)
-        self.pilot_heading_control(dt)
-        self.pilot_altitude_control(dt)
+    def apply_atc_clearance(self, turn_rate_cmd, accel_cmd, vert_speed_cmd, dt):
+        self.current_turn_rate = np.clip(turn_rate_cmd, -self.max_turn_rate, self.max_turn_rate)
+        self.vert_speed = np.clip(vert_speed_cmd, -MAX_VERT_SPEED, MAX_VERT_SPEED)
+        self.accel = np.clip(accel_cmd, -constants.MAX_ACCEL, constants.MAX_ACCEL)
+        return 1
 
     # -----------------------------
     # Physics update
@@ -158,7 +97,11 @@ class Airplane:
         if self.landed:
             return
 
-        self.apply_control(dt)
+        # Speed integration
+        self.speed += self.accel * dt
+        self.speed = np.clip(self.speed, self.min_speed, self.max_speed)
+
+        self.dist_to_faf = np.inf  # Set to inf if no env
 
         # Heading integration
         self.heading += self.current_turn_rate * dt
@@ -176,12 +119,13 @@ class Airplane:
             np.sin(self.heading)
         ], dtype=np.float32)
 
-        self.position_nm += direction * groundspeed_nm_per_sec * dt
+        dist_travelled = groundspeed_nm_per_sec * dt
+        self.position_nm += direction * dist_travelled
 
     # -----------------------------
     # Pilot-local shaping reward
     # -----------------------------
-    def compute_pilot_reward(self, curriculum_stage: int):
+    def compute_pilot_reward(self, curriculum_stage: int = 0):
         reward = 0.0
 
         heading_error = abs(self.heading_error_deg)
@@ -189,26 +133,55 @@ class Airplane:
         speed_error = abs(self.speed - self.target_speed)
         vs_error = abs(self.vert_speed)
         turn_rate = abs(self.current_turn_rate)
-        dist_nm = np.linalg.norm(self.position_nm - self.destination)
+        dist_nm = np.linalg.norm(self.position_nm - self.destination.position_nm)
 
-        # Arrival vertical intent
+        # Glide path logic
         if self.is_arrival:
-            if self.target_altitude < self.altitude:
-                reward += VERTICAL_RIGHT_DIRECTION_REWARD
-            else:
-                reward += VERTICAL_WRONG_DIRECTION_PENALTY
+            ideal_alt_ft = self.destination.altitude_ft + dist_nm * 318
+            alt_error = self.altitude - ideal_alt_ft
+
+            # Only care if ABOVE glide path
+            if self.is_arrival:
+                ideal_alt_ft = self.destination.altitude_ft + dist_nm * 318
+                above_glide_ft = self.altitude - ideal_alt_ft
+
+                if above_glide_ft > 0:
+                    # Strong penalty for being high
+                    above_glide_norm = above_glide_ft / 3000.0   # 3000 ft ~ very bad
+                    above_glide_norm = np.clip(above_glide_norm, 0.0, 2.0)
+
+                    reward -= 2.0 * above_glide_norm
+
+
+        # ----- Vertical speed shaping -----
+        vs_norm = abs(self.vert_speed) / 1500.0   # 1500 fpm ~ aggressive
+        vs_norm = np.clip(vs_norm, 0.0, 2.0)
+
+        reward -= 0.5 * vs_norm
+
+        if self.is_arrival and self.vert_speed > 0:
+            reward -= 0.01 * self.vert_speed
+        if self.is_arrival and self.vert_speed < -300:
+            reward += 0.2
+
+        # ----- Distance progress (CRITICAL) -----
+        progress_nm = self.prev_dist_nm - dist_nm
+        if not np.isfinite(progress_nm):
+            progress_nm = 0.0
+        reward += 5.0 * progress_nm
+        self.prev_dist_nm = dist_nm
+
+        # explicit “too high near runway” penalty when we are training early stages on the localizer
+        if curriculum_stage < 2:
+            if self.is_arrival and dist_nm < 8.0 and self.altitude > 3000:
+                reward -= 50.0
 
         # Stage shaping
         if curriculum_stage >= 0:
             reward += 1.0 * (1.0 - min(heading_error / 30.0, 1.0))
 
-        if curriculum_stage >= 1:
-            reward += 1.0 * (1.0 - min(altitude_error / 2000.0, 1.0))
-
         if curriculum_stage >= 2:
             reward += 0.5 * (1.0 - min(heading_error / 15.0, 1.0))
-            reward += 0.5 * (1.0 - min(altitude_error / 1000.0, 1.0))
-
             if dist_nm < TERMINAL_RADIUS:
                 reward += 1.0 * (1.0 - dist_nm / TERMINAL_RADIUS)
 
@@ -228,7 +201,21 @@ class Airplane:
                 if self.speed < APPROACH_SPEED:
                     reward += 5.0
 
-        reward -= 0.01
+        if self.dist_to_faf < 1.0:
+            reward += 2.0  # crossed FAF correctly
+
+        stage_scale = {
+            0: 1.0,
+            1: 1.0,
+            2: 1.0,
+            3: 0.7,
+            4: 0.5,
+            5: 0.3,
+        }.get(curriculum_stage, 0.3)
+
+        reward *= stage_scale
+
+        reward = np.clip(reward-0.01, -10.0, 10.0)
         return reward
 
     # -----------------------------

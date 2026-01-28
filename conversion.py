@@ -19,3 +19,6 @@ def enu_to_latlon(x_east, y_north, lat0, lon0):
     lon = lon0 + np.rad2deg(dlon)
 
     return lat, lon
+
+def wrap_angle(angle):
+    return angle % (2 * np.pi)
