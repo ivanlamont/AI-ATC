@@ -1,0 +1,45 @@
+# Security and Vulnerability Scanning Dependencies
+# Usage: pip install -r requirements-security.txt
+
+# Web application security
+flask-cors>=4.0.0
+flask-limiter>=3.5.0
+flask-talisman>=1.0.0
+flask-jwt-extended>=4.5.0
+
+# Input validation and sanitization
+email-validator>=2.0.0
+bleach>=6.0.0
+python-dateutil>=2.8.0
+
+# Cryptography
+cryptography>=41.0.0
+pycryptodome>=3.18.0
+
+# Secrets management
+python-dotenv>=1.0.0
+hvac>=1.0.0
+
+# Security scanning
+bandit>=1.7.5
+safety>=2.3.0
+pip-audit>=2.6.0
+
+# OWASP scanning
+python-owasp-zap>=2.0.0
+
+# Container security
+trivy>=0.46.0
+
+# Dependency checking
+pip-chill>=1.0.3
+pipdeptree>=3.13.0
+
+# Monitoring and logging
+python-json-logger>=2.0.7
+
+# Testing security
+pytest-security>=0.0.1
+
+# Certificate management
+certifi>=2023.7.22
