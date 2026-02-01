@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet:*)"
+      "Bash(dotnet:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(chmod:*)"
     ]
   }
 }

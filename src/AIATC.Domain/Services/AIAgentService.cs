@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using AIATC.Domain.Models;
 using Microsoft.Extensions.Logging;
+using AIATC.Common;
 
 namespace AIATC.Domain.Services
 {

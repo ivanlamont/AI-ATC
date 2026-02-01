@@ -12,41 +12,11 @@ using System.Threading.Tasks;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using AIATC.ML.Services;
+using AIATC.Common;
 
 
 namespace AIATC.ML.Services
 {
-    /// <summary>
-    /// gRPC message for game observation
-    /// </summary>
-    public class ObservationMessage
-    {
-        public float AircraftAltitudeFt { get; set; }
-        public float AircraftSpeedKts { get; set; }
-        public float AircraftHeadingDeg { get; set; }
-        public float TargetAltitudeFt { get; set; }
-        public float TargetSpeedKts { get; set; }
-        public float TargetHeadingDeg { get; set; }
-        public float DistanceToAirportNm { get; set; }
-        public float AltitudeToRunwayFt { get; set; }
-        public float WindSpeedKts { get; set; }
-        public float WindDirectionDeg { get; set; }
-        public float SeparationFromOtherAircraftNm { get; set; }
-        public int NumAircraftInApproach { get; set; }
-    }
-
-    /// <summary>
-    /// gRPC message for AI action response
-    /// </summary>
-    public class ActionMessage
-    {
-        public float HeadingDeg { get; set; }
-        public float AltitudeFt { get; set; }
-        public float SpeedKts { get; set; }
-        public float Confidence { get; set; }
-        public string Command { get; set; }
-        public long InferenceTimeMs { get; set; }
-    }
 
     /// <summary>
     /// AI Agent inference service via gRPC

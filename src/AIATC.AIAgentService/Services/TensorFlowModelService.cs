@@ -12,60 +12,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using static Tensorflow;
+using Tensorflow;
 using static Tensorflow.Binding;
-
+using NumSharp;
+using AIATC.Common;
 
 namespace AIATC.ML.Services
 {
-    /// <summary>
-    /// Represents model configuration
-    /// </summary>
-    public class ModelConfiguration
-    {
-        public string ModelPath { get; set; }
-        public int InputSize { get; set; } = 128;
-        public int ActionSize { get; set; } = 6;
-        public float MinAltitudeFt { get; set; } = 500;
-        public float MaxAltitudeFt { get; set; } = 15000;
-        public float MinSpeedKts { get; set; } = 100;
-        public float MaxSpeedKts { get; set; } = 450;
-        public float MinHeadingDeg { get; set; } = 0;
-        public float MaxHeadingDeg { get; set; } = 360;
-    }
-
-    /// <summary>
-    /// Observation data from game environment
-    /// </summary>
-    public class GameObservation
-    {
-        public float AircraftAltitudeFt { get; set; }
-        public float AircraftSpeedKts { get; set; }
-        public float AircraftHeadingDeg { get; set; }
-        public float TargetAltitudeFt { get; set; }
-        public float TargetSpeedKts { get; set; }
-        public float TargetHeadingDeg { get; set; }
-        public float DistanceToAirportNm { get; set; }
-        public float AltitudeToRunwayFt { get; set; }
-        public float WindSpeedKts { get; set; }
-        public float WindDirectionDeg { get; set; }
-        public float SeparationFromOtherAircraftNm { get; set; }
-        public int NumAircraftInApproach { get; set; }
-        public float[] RawObservation { get; set; }
-    }
-
-    /// <summary>
-    /// Action from model inference
-    /// </summary>
-    public class MLAction
-    {
-        public float HeadingDeg { get; set; }
-        public float AltitudeFt { get; set; }
-        public float SpeedKts { get; set; }
-        public float Confidence { get; set; }
-        public int ActionIndex { get; set; }
-    }
-
     /// <summary>
     /// Main TensorFlow model service
     /// </summary>

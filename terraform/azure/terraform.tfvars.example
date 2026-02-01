@@ -1,0 +1,13 @@
+subscription_id       = "your-subscription-id"
+resource_group_name   = "aiatc-rg"
+location              = "East US"
+cluster_name          = "aiatc-aks"
+dns_prefix            = "aiatc"
+node_count            = 3
+vm_size               = "Standard_D2s_v3"
+container_registry_name = "aiatcregistry"
+postgres_server_name  = "aiatc-db-prod"
+db_admin_username     = "aiatcadmin"
+db_admin_password     = "SecurePassword123!"
+redis_cache_name      = "aiatc-redis"
+storage_account_name  = "aiatcstorageprod"

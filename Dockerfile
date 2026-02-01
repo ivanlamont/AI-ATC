@@ -1,16 +1,31 @@
-FROM tensorflow/tensorflow:2.20.0-gpu
+# Multi-stage build for AIATC Web Application
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
 
-RUN apt-get update && apt-get install -y ffmpeg
+COPY ["AIATC.slnx", "."]
+COPY ["src/AIATC.Domain/AIATC.Domain.csproj", "src/AIATC.Domain/"]
+COPY ["src/AIATC.Web/AIATC.Web.csproj", "src/AIATC.Web/"]
+COPY ["src/AIATC.Common/AIATC.Common.csproj", "src/AIATC.Common/"]
+COPY ["src/AIATC.AudioService/AIATC.AudioService.csproj", "src/AIATC.AudioService/"]
+COPY ["src/AIATC.SimulationService/AIATC.SimulationService.csproj", "src/AIATC.SimulationService/"]
+COPY ["src/AIATC.UserService/AIATC.UserService.csproj", "src/AIATC.UserService/"]
+COPY ["src/AIATC.ScenarioService/AIATC.ScenarioService.csproj", "src/AIATC.ScenarioService/"]
+COPY ["src/AIATC.AIAgentService/AIATC.AIAgentService.csproj", "src/AIATC.AIAgentService/"]
 
+RUN dotnet restore "AIATC.slnx"
+
+COPY . .
+RUN dotnet build "AIATC.slnx" -c Release --no-restore
+
+FROM build AS publish
+RUN dotnet publish "src/AIATC.Web/AIATC.Web.csproj" -c Release -o /app/publish --no-build
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
+COPY --from=publish /app/publish .
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt \
-    && rm -rf /root/.cache/pip  # optional cleanup to reduce image size
+ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_ENVIRONMENT=Production
 
-COPY *.py .
-
-ENV TF_FORCE_GPU_ALLOW_GROWTH=true
-ENV TF_CPP_MIN_LOG_LEVEL=2
-
-CMD ["python", "train_ai_atc.py"]
+EXPOSE 5000
+ENTRYPOINT ["dotnet", "AIATC.Web.dll"]

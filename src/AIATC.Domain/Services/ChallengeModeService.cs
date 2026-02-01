@@ -6,6 +6,7 @@ using AIATC.Domain.Models;
 using AIATC.Domain.Models.Scenarios;
 using AIATC.Domain.Models.Scoring;
 using Microsoft.Extensions.Logging;
+using AIATC.Common;
 
 namespace AIATC.Domain.Services
 {
@@ -24,8 +25,6 @@ namespace AIATC.Domain.Services
         private readonly SimulationEngine _userSimulation;
         private readonly SimulationEngine _aiSimulation;
         private readonly AIAgentService _aiAgent;
-        private readonly ScoringService _userScoring;
-        private readonly ScoringService _aiScoring;
 
         public bool IsActive { get; private set; }
         public ChallengeState State { get; private set; }
@@ -64,8 +63,6 @@ namespace AIATC.Domain.Services
 
             _userSimulation = new SimulationEngine();
             _aiSimulation = new SimulationEngine();
-            _userScoring = new ScoringService();
-            _aiScoring = new ScoringService();
 
             UserCommandHistory = new List<ChallengeCommand>();
             AiCommandHistory = new List<ChallengeCommand>();
@@ -77,7 +74,7 @@ namespace AIATC.Domain.Services
         /// <summary>
         /// Initialize a challenge mode session with identical scenarios
         /// </summary>
-        public async Task<bool> InitializeChallengeAsync(
+        public bool InitializeChallenge(
             string scenarioId,
             Difficulty difficulty)
         {
@@ -89,24 +86,30 @@ namespace AIATC.Domain.Services
                 Difficulty = difficulty;
                 ChallengeId = Guid.NewGuid().ToString();
 
-                // Both sides get identical scenario instances
-                // This ensures fair comparison
-                var userScenario = CreateScenarioInstance(scenarioId, difficulty);
-                var aiScenario = CreateScenarioInstance(scenarioId, difficulty);
-
-                // Initialize both simulations
-                _userSimulation.Initialize(userScenario);
-                _aiSimulation.Initialize(aiScenario);
-
-                // Register scoring for both sides
-                foreach (var aircraft in userScenario.Aircraft)
+                // Load the scenario for both simulations
+                var scenario = _userSimulation.ScenarioService.GetScenario(scenarioId);
+                if (scenario == null)
                 {
-                    _userScoring.RegisterAircraft(aircraft);
+                    _logger.LogError($"Scenario {scenarioId} not found");
+                    return false;
                 }
-                foreach (var aircraft in aiScenario.Aircraft)
-                {
-                    _aiScoring.RegisterAircraft(aircraft);
-                }
+
+                // Register scenarios with both simulation engines
+                _userSimulation.ScenarioService.RegisterScenario(scenario);
+                _aiSimulation.ScenarioService.RegisterScenario(scenario);
+
+                // Start scenarios
+                _userSimulation.ScenarioService.StartScenario(scenario.Metadata.Id);
+                _aiSimulation.ScenarioService.StartScenario(scenario.Metadata.Id);
+
+                // Add aircraft to both simulations
+                // Note: In a real implementation, aircraft would be spawned by the scenario
+                // For now, we'll add some dummy aircraft
+                var userAircraft = CreateTestAircraft();
+                var aiAircraft = CreateTestAircraft();
+
+                _userSimulation.AddAircraft(userAircraft);
+                _aiSimulation.AddAircraft(aiAircraft);
 
                 State = ChallengeState.Ready;
                 IsActive = false;
@@ -210,7 +213,7 @@ namespace AIATC.Domain.Services
             UserCommandHistory.Add(command);
 
             // Apply command to user's simulation
-            _userSimulation.ApplyCommand(targetAircraft, commandText);
+            ApplyCommandToAircraft(targetAircraft, commandText);
 
             _logger.LogDebug($"User command: {commandText} → {command.TargetCallsign}");
         }
@@ -281,7 +284,7 @@ namespace AIATC.Domain.Services
                         };
 
                         AiCommandHistory.Add(challengeCommand);
-                        _aiSimulation.ApplyCommand(aircraft, result.Command);
+                        ApplyCommandToAircraft(aircraft, result.Command);
 
                         _logger.LogDebug($"AI command: {result.Command} → {aircraft.Callsign} (confidence: {result.Confidence:P})");
                     }
@@ -332,10 +335,13 @@ namespace AIATC.Domain.Services
         /// </summary>
         public ChallengeComparison GetCurrentComparison()
         {
+            var userScenario = _userSimulation.ScenarioService.GetActiveScenario();
+            var aiScenario = _aiSimulation.ScenarioService.GetActiveScenario();
+
             return new ChallengeComparison
             {
-                UserScore = _userScoring.GetSessionScore(),
-                AiScore = _aiScoring.GetSessionScore(),
+                UserScore = userScenario != null ? new SessionScore { TotalScore = userScenario.CurrentScore } : new SessionScore(),
+                AiScore = aiScenario != null ? new SessionScore { TotalScore = aiScenario.CurrentScore } : new SessionScore(),
                 UserAircraftCount = _userSimulation.Aircraft.Count,
                 AiAircraftCount = _aiSimulation.Aircraft.Count,
                 UserCommandCount = UserCommandHistory.Count,
@@ -349,8 +355,8 @@ namespace AIATC.Domain.Services
         /// </summary>
         public ChallengeResult DetermineWinner()
         {
-            var userScore = _userScoring.GetSessionScore().TotalScore;
-            var aiScore = _aiScoring.GetSessionScore().TotalScore;
+            var userScore = _userSimulation.ScenarioService.GetActiveScenario()?.CurrentScore ?? 0;
+            var aiScore = _aiSimulation.ScenarioService.GetActiveScenario()?.CurrentScore ?? 0;
 
             string winner;
             float margin;
@@ -405,12 +411,34 @@ namespace AIATC.Domain.Services
         {
             // TODO: Load scenario from repository with specified difficulty
             // For now, create a basic scenario
-            return new Scenario
+            var scenario = new Scenario
             {
-                Id = scenarioId,
-                Metadata = new ScenarioMetadata { Difficulty = difficulty },
-                Configuration = new ScenarioConfiguration(),
-                Aircraft = new List<AircraftModel>()
+                Metadata = new ScenarioMetadata
+                {
+                    Id = scenarioId,
+                    Name = $"Challenge: {scenarioId}",
+                    Difficulty = (ScenarioDifficulty)difficulty
+                },
+                Configuration = new ScenarioConfiguration()
+            };
+
+            return scenario;
+        }
+
+        private AircraftModel CreateTestAircraft()
+        {
+            return new AircraftModel
+            {
+                Callsign = "TEST123",
+                AircraftType = "B738",
+                IsArrival = true,
+                PositionNm = new Vector2(10, 5), // 10nm from airport
+                HeadingRadians = 3.14159f, // South
+                SpeedKnots = 150,
+                AltitudeFt = 3000,
+                MinSpeedKnots = 100,
+                MaxSpeedKnots = 250,
+                MaxTurnRateRadPerSec = 0.1f
             };
         }
 
@@ -427,14 +455,14 @@ namespace AIATC.Domain.Services
             {
                 AircraftAltitudeFt = targetAircraft.AltitudeFt,
                 AircraftSpeedKts = targetAircraft.SpeedKnots,
-                AircraftHeadingDeg = targetAircraft.HeadingDegrees,
-                TargetAltitudeFt = targetAircraft.TargetAltitudeFt,
-                TargetSpeedKts = targetAircraft.TargetSpeedKnots,
-                TargetHeadingDeg = targetAircraft.TargetHeadingDegrees,
+                AircraftHeadingDeg = targetAircraft.HeadingRadians * 180f / MathF.PI,
+                TargetAltitudeFt = targetAircraft.TargetAltitudeFt ?? targetAircraft.AltitudeFt,
+                TargetSpeedKts = targetAircraft.TargetSpeedKnots ?? targetAircraft.SpeedKnots,
+                TargetHeadingDeg = (targetAircraft.TargetHeadingRadians ?? targetAircraft.HeadingRadians) * 180f / MathF.PI,
                 DistanceToAirportNm = CalculateDistanceToAirport(targetAircraft),
                 AltitudeToRunwayFt = targetAircraft.AltitudeFt,
-                WindSpeedKts = simulation.CurrentWeather?.WindSpeedKts ?? 0,
-                WindDirectionDeg = simulation.CurrentWeather?.WindDirectionDeg ?? 0,
+                WindSpeedKts = simulation.WeatherService.GetWeather("KJFK")?.WindLayers.FirstOrDefault()?.SpeedKnots ?? 0,
+                WindDirectionDeg = simulation.WeatherService.GetWeather("KJFK")?.WindLayers.FirstOrDefault()?.DirectionDegrees ?? 0,
                 SeparationFromOtherAircraftNm = FindClosestAircraft(targetAircraft, simulation),
                 NumAircraftInApproach = CountApproachingAircraft(simulation)
             };
@@ -504,6 +532,43 @@ namespace AIATC.Domain.Services
         private int CountApproachingAircraft(SimulationEngine simulation)
         {
             return simulation.Aircraft.Count(a => a.AltitudeFt < 5000); // Simplified
+        }
+
+        /// <summary>
+        /// Apply a text command to an aircraft
+        /// </summary>
+        private void ApplyCommandToAircraft(AircraftModel? aircraft, string commandText)
+        {
+            if (aircraft == null) return;
+
+            // Simple command parsing - in a real implementation this would be more sophisticated
+            var command = commandText.ToLower().Trim();
+
+            if (command.Contains("turn") && command.Contains("left"))
+            {
+                aircraft.ApplyAtcClearance(-0.1f, 0, 0); // Turn left
+            }
+            else if (command.Contains("turn") && command.Contains("right"))
+            {
+                aircraft.ApplyAtcClearance(0.1f, 0, 0); // Turn right
+            }
+            else if (command.Contains("climb"))
+            {
+                aircraft.ApplyAtcClearance(0, 0, 1000); // Climb
+            }
+            else if (command.Contains("descend"))
+            {
+                aircraft.ApplyAtcClearance(0, 0, -1000); // Descend
+            }
+            else if (command.Contains("speed up") || command.Contains("faster"))
+            {
+                aircraft.ApplyAtcClearance(0, 10, 0); // Speed up
+            }
+            else if (command.Contains("slow down") || command.Contains("slower"))
+            {
+                aircraft.ApplyAtcClearance(0, -10, 0); // Slow down
+            }
+            // Default: maintain current state
         }
     }
 

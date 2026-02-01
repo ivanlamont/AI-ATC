@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using AIATC.Domain.Services;
 using AIATC.Domain.Models;
+using AIATC.Common;
 
 namespace AIATC.Domain.Tests.Services
 {

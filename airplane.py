@@ -43,10 +43,22 @@ class Airplane:
         max_turn_rate_rads: float,   # rad/sec
         init_altitude_ft: float = 1000.0,
         is_arrival: bool = True,
+        is_vfr: bool = False,
     ):
         self.id = plane_id
         self.last_clearance_time = 0.0
-        
+
+        # Flight rules type
+        self.is_vfr = is_vfr  # True for VFR, False for IFR
+
+        # VFR-specific constraints
+        if is_vfr:
+            self.max_altitude = 10000.0  # VFR typically below 10,000 ft
+            self.min_alt_for_controlled_airspace = 500.0  # VFR minimum altitudes
+        else:
+            self.max_altitude = MAX_ALTITUDE  # IFR can go higher
+            self.min_alt_for_controlled_airspace = 0.0
+
         # -----------------------------
         # State (truth)
         # -----------------------------
@@ -58,6 +70,10 @@ class Airplane:
         self.vert_speed = 0.0                         # ft/min
         self.current_turn_rate = 0.0                  # rad/sec
         self.accel = 0.0                              # knots/sec
+
+        # VFR flight following indicator
+        self.has_flight_following = False  # VFR can request flight following
+        self.on_radar = False  # Whether ATC has positive control
 
         # -----------------------------
         # Targets (ATC commands)
@@ -220,6 +236,7 @@ class Airplane:
 
     # -----------------------------
     # Landing check (NM + ft)
+    # Different criteria for VFR vs IFR
     # -----------------------------
     def check_landing(self, airport_pos_nm: np.ndarray, landing_radius_nm: float) -> bool:
         if self.landed:
@@ -227,12 +244,24 @@ class Airplane:
 
         dist_nm = np.linalg.norm(self.position_nm - airport_pos_nm)
 
+        # VFR aircraft have slightly more relaxed landing criteria
+        if self.is_vfr:
+            altitude_threshold = 1000.0  # VFR can land at lower altitude
+            vs_threshold = 800.0  # More relaxed vertical speed
+            turn_rate_threshold = np.deg2rad(5.0)  # More relaxed turn rate
+            approach_speed = APPROACH_SPEED + 10.0  # Slightly higher approach speed
+        else:
+            altitude_threshold = 1500.0  # IFR stricter
+            vs_threshold = 700.0
+            turn_rate_threshold = np.deg2rad(3.0)
+            approach_speed = APPROACH_SPEED
+
         if (
             dist_nm <= landing_radius_nm
-            and self.altitude <= 1500.0
-            and abs(self.vert_speed) <= 700.0
-            and abs(self.current_turn_rate) <= np.deg2rad(3.0)
-            and self.speed <= APPROACH_SPEED
+            and self.altitude <= altitude_threshold
+            and abs(self.vert_speed) <= vs_threshold
+            and abs(self.current_turn_rate) <= turn_rate_threshold
+            and self.speed <= approach_speed
         ):
             self.landed = True
             return True
