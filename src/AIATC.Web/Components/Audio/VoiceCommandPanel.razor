@@ -1,0 +1,171 @@
+@using AIATC.Web.Services
+@using AIATC.Domain.Models.Commands
+@inject SpeechRecognitionService SpeechRecognition
+@inject TextToSpeechService TextToSpeech
+@implements IAsyncDisposable
+
+<div class="voice-command-panel">
+    <div class="voice-status">
+        @if (!_isInitialized)
+        {
+            <div class="status-warning">
+                <span>⚠️ Voice commands not available in this browser</span>
+            </div>
+        }
+        else
+        {
+            <button class="mic-button @(_isListening ? "listening" : "")"
+                    @onclick="ToggleMicrophone"
+                    title="@(_isListening ? "Stop listening" : "Start voice commands")">
+                @if (_isListening)
+                {
+                    <span class="mic-icon">🔴</span>
+                    <span>Listening...</span>
+                }
+                else
+                {
+                    <span class="mic-icon">🎤</span>
+                    <span>Voice Commands</span>
+                }
+            </button>
+
+            @if (EnableTextToSpeech)
+            {
+                <button class="tts-button @(_ttsEnabled ? "active" : "")"
+                        @onclick="ToggleTts"
+                        title="@(_ttsEnabled ? "Disable" : "Enable") pilot readbacks">
+                    <span>🔊</span>
+                    <span>@(_ttsEnabled ? "TTS On" : "TTS Off")</span>
+                </button>
+            }
+        }
+    </div>
+
+    @if (_isListening && !string.IsNullOrEmpty(_lastTranscript))
+    {
+        <div class="transcript-display">
+            <span class="transcript-label">Heard:</span>
+            <span class="transcript-text">@_lastTranscript</span>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_lastError))
+    {
+        <div class="error-display">
+            <span>⚠️ @_lastError</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback<string> OnCommandRecognized { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnReadbackSpoken { get; set; }
+
+    [Parameter]
+    public bool EnableTextToSpeech { get; set; } = true;
+
+    [Parameter]
+    public AtcCommandParser? Parser { get; set; }
+
+    private bool _isInitialized;
+    private bool _isListening;
+    private bool _ttsEnabled = true;
+    private string? _lastTranscript;
+    private string? _lastError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize speech recognition
+        _isInitialized = await SpeechRecognition.InitializeAsync();
+
+        if (_isInitialized)
+        {
+            SpeechRecognition.SpeechRecognized += OnSpeechRecognized;
+            SpeechRecognition.SpeechError += OnSpeechError;
+            SpeechRecognition.ListeningStarted += OnListeningStarted;
+            SpeechRecognition.ListeningStopped += OnListeningStopped;
+        }
+
+        // Initialize TTS
+        if (EnableTextToSpeech)
+        {
+            await TextToSpeech.InitializeAsync();
+        }
+    }
+
+    private async Task ToggleMicrophone()
+    {
+        await SpeechRecognition.ToggleListeningAsync();
+    }
+
+    private void ToggleTts()
+    {
+        _ttsEnabled = !_ttsEnabled;
+    }
+
+    private async void OnSpeechRecognized(object? sender, string transcript)
+    {
+        _lastTranscript = transcript;
+        _lastError = null;
+
+        // Validate if it's a valid command
+        if (Parser != null && !Parser.CanParse(transcript))
+        {
+            _lastError = "Invalid command";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        // Notify parent component
+        await OnCommandRecognized.InvokeAsync(transcript);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnSpeechError(object? sender, string error)
+    {
+        _lastError = $"Error: {error}";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnListeningStarted(object? sender, EventArgs e)
+    {
+        _isListening = true;
+        _lastError = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnListeningStopped(object? sender, EventArgs e)
+    {
+        _isListening = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Speaks pilot readback (called from parent)
+    /// </summary>
+    public async Task SpeakReadbackAsync(string callsign, string readback)
+    {
+        if (!_ttsEnabled || !EnableTextToSpeech)
+            return;
+
+        await TextToSpeech.SpeakPilotReadbackAsync(callsign, readback);
+        await OnReadbackSpoken.InvokeAsync($"{callsign}, {readback}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isInitialized)
+        {
+            SpeechRecognition.SpeechRecognized -= OnSpeechRecognized;
+            SpeechRecognition.SpeechError -= OnSpeechError;
+            SpeechRecognition.ListeningStarted -= OnListeningStarted;
+            SpeechRecognition.ListeningStopped -= OnListeningStopped;
+
+            await SpeechRecognition.DisposeAsync();
+        }
+    }
+}

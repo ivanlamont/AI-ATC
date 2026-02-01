@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AIATC.AIAgentService/AIATC.AIAgentService.csproj" />
+    <Project Path="src/AIATC.AudioService/AIATC.AudioService.csproj" />
+    <Project Path="src/AIATC.Common/AIATC.Common.csproj" />
+    <Project Path="src/AIATC.Domain/AIATC.Domain.csproj" />
+    <Project Path="src/AIATC.ScenarioService/AIATC.ScenarioService.csproj" />
+    <Project Path="src/AIATC.SimulationService/AIATC.SimulationService.csproj" />
+    <Project Path="src/AIATC.UserService/AIATC.UserService.csproj" />
+    <Project Path="src/AIATC.Web/AIATC.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AIATC.Domain.Tests/AIATC.Domain.Tests.csproj" />
+    <Project Path="tests/AIATC.SimulationService.Tests/AIATC.SimulationService.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -3,4 +3,10 @@ tb_logs/*
 tensorboard/*
 models/*
 visualizations/*
-
+bin/
+obj/
+.vs/AIATC/DesignTimeBuild/
+.vs/ProjectEvaluation/
+*.vsidx
+.vs/AIATC/
+docs/

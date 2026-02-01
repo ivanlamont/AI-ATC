@@ -1,0 +1,6 @@
+@AIATC.AIAgentService_HostAddress = http://localhost:5283
+
+GET {{AIATC.AIAgentService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,6 @@
+@AIATC.AudioService_HostAddress = http://localhost:5096
+
+GET {{AIATC.AudioService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

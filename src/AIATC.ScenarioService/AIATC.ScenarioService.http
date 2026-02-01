@@ -1,0 +1,6 @@
+@AIATC.ScenarioService_HostAddress = http://localhost:5285
+
+GET {{AIATC.ScenarioService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
