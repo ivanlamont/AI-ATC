@@ -1,4 +1,7 @@
 ﻿@inherits LayoutComponentBase
+
+@inject IJSRuntime JSRuntime
+
 <div class="page">
     <div class="sidebar">
         <NavMenu />
@@ -6,7 +9,7 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <a href="#" @onclick="ShowAboutModal" @onclick:preventDefault>About</a>
         </div>
 
         <article class="content px-4">
@@ -14,3 +17,38 @@
         </article>
     </main>
 </div>
+
+@if (ShowAbout)
+{
+    <!-- Modal Backdrop -->
+    <div class="modal-backdrop" @onclick="HideAboutModal"></div>
+
+    <!-- Modal Dialog -->
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>About AI-ATC</h3>
+                <button class="close-button" @onclick="HideAboutModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <img src="splash.png" alt="AI-ATC Splash Screen" class="splash-image" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool ShowAbout { get; set; } = false;
+
+    private void ShowAboutModal()
+    {
+        ShowAbout = true;
+        StateHasChanged();
+    }
+
+    private void HideAboutModal()
+    {
+        ShowAbout = false;
+        StateHasChanged();
+    }
+}
