@@ -9,8 +9,16 @@
   <ItemGroup>
     <PackageReference Include="Dapr.AspNetCore" Version="1.16.1" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.68.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.2" />
     <PackageReference Include="SciSharp.TensorFlow.Redist" Version="2.16.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos\ai_agent.proto" GrpcServices="Server" />
   </ItemGroup>
 
 </Project>

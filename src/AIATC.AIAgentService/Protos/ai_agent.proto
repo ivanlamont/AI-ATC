@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package aiatc.ml;
+
+option csharp_namespace = "AIATC.ML.Services";
+
+// gRPC Service for AI Agent Inference
+service AIAgent {
+  rpc Infer (ObservationMessage) returns (ActionMessage);
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+  rpc GetStatus (StatusRequest) returns (StatusResponse);
+}
+
+// Observation message containing game state
+message ObservationMessage {
+  float aircraft_altitude_ft = 1;
+  float aircraft_speed_kts = 2;
+  float aircraft_heading_deg = 3;
+  float target_altitude_ft = 4;
+  float target_speed_kts = 5;
+  float target_heading_deg = 6;
+  float distance_to_airport_nm = 7;
+  float altitude_to_runway_ft = 8;
+  float wind_speed_kts = 9;
+  float wind_direction_deg = 10;
+  float separation_from_other_aircraft_nm = 11;
+  int32 num_aircraft_in_approach = 12;
+}
+
+// Action message containing AI-generated command
+message ActionMessage {
+  float heading_deg = 1;
+  float altitude_ft = 2;
+  float speed_kts = 3;
+  float confidence = 4;
+  string command = 5;
+  int64 inference_time_ms = 6;
+}
+
+// Health check request
+message HealthCheckRequest {
+  string service = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;
+  }
+  ServingStatus status = 1;
+}
+
+// Status request
+message StatusRequest {
+}
+
+// Status response
+message StatusResponse {
+  bool is_model_loaded = 1;
+  string current_model_path = 2;
+  double avg_inference_time_ms = 3;
+  int32 inference_samples_tracked = 4;
+  string last_model_load_time = 5;
+  int64 min_inference_time_ms = 6;
+  int64 max_inference_time_ms = 7;
+  bool is_running = 8;
+  int32 port = 9;
+}
