@@ -1,0 +1,150 @@
+.command-input-container {
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 20, 0, 0.9);
+    border: 1px solid #004400;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+}
+
+.command-history {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    padding: 5px;
+    background: rgba(0, 10, 0, 0.5);
+    border-radius: 3px;
+}
+
+.history-entry {
+    padding: 4px 6px;
+    margin: 2px 0;
+    font-size: 12px;
+    border-left: 3px solid transparent;
+}
+
+.history-entry.valid {
+    border-left-color: #00aa00;
+    color: #00cc00;
+}
+
+.history-entry.invalid {
+    border-left-color: #aa0000;
+    color: #cc5555;
+}
+
+.timestamp {
+    color: #666666;
+    margin-right: 8px;
+}
+
+.callsign {
+    font-weight: bold;
+    margin-right: 8px;
+    color: #00ff00;
+}
+
+.command {
+    color: #00cc00;
+}
+
+.error {
+    margin-left: 10px;
+    color: #ff6666;
+    font-style: italic;
+}
+
+.input-area {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.selected-callsign {
+    color: #00ff00;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.command-input {
+    flex: 1;
+    background: rgba(0, 40, 0, 0.8);
+    border: 1px solid #00aa00;
+    border-radius: 3px;
+    padding: 8px 12px;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    outline: none;
+}
+
+.command-input:focus {
+    border-color: #00ff00;
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+}
+
+.command-input::placeholder {
+    color: #006600;
+}
+
+.suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: rgba(0, 40, 0, 0.95);
+    border: 1px solid #00aa00;
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+    margin-top: -3px;
+    z-index: 1000;
+}
+
+.suggestion {
+    padding: 6px 12px;
+    cursor: pointer;
+    color: #00cc00;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(0, 170, 0, 0.3);
+}
+
+.suggestion:last-child {
+    border-bottom: none;
+}
+
+.suggestion:hover {
+    background: rgba(0, 80, 0, 0.8);
+    color: #00ff00;
+}
+
+.quick-commands {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.quick-commands button {
+    background: rgba(0, 60, 0, 0.8);
+    border: 1px solid #00aa00;
+    border-radius: 3px;
+    padding: 6px 10px;
+    color: #00cc00;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.quick-commands button:hover {
+    background: rgba(0, 100, 0, 0.9);
+    border-color: #00ff00;
+    color: #00ff00;
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+}
+
+.quick-commands button:active {
+    transform: scale(0.95);
+}

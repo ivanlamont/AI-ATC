@@ -1,0 +1,374 @@
+@using AIATC.Domain.Models
+@using AIATC.Domain.Models.Navigation
+@inject IJSRuntime JS
+
+<div class="radar-container" @ref="radarContainer">
+    <canvas @ref="radarCanvas"
+            width="@CanvasWidth"
+            height="@CanvasHeight"
+            @onmousedown="OnMouseDown"
+            @onmousemove="OnMouseMove"
+            @onmouseup="OnMouseUp"
+            @onwheel="OnWheel">
+    </canvas>
+
+    @if (SelectedAircraft != null)
+    {
+        <div class="aircraft-info-panel">
+            <h3>@SelectedAircraft.Callsign</h3>
+            <div class="info-row">
+                <span>Altitude:</span>
+                <span>@((int)SelectedAircraft.AltitudeFt) ft</span>
+            </div>
+            <div class="info-row">
+                <span>Speed:</span>
+                <span>@((int)SelectedAircraft.SpeedKnots) kts</span>
+            </div>
+            <div class="info-row">
+                <span>Heading:</span>
+                <span>@((int)SelectedAircraft.HeadingDegrees)°</span>
+            </div>
+            @if (SelectedAircraft.TargetHeadingDegrees.HasValue)
+            {
+                <div class="info-row">
+                    <span>Target Hdg:</span>
+                    <span>@((int)SelectedAircraft.TargetHeadingDegrees.Value)°</span>
+                </div>
+            }
+            @if (SelectedAircraft.TargetAltitudeFt.HasValue)
+            {
+                <div class="info-row">
+                    <span>Target Alt:</span>
+                    <span>@((int)SelectedAircraft.TargetAltitudeFt.Value) ft</span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<AircraftModel> Aircraft { get; set; } = new();
+
+    [Parameter]
+    public List<Fix> Fixes { get; set; } = new();
+
+    [Parameter]
+    public AirportModel? Airport { get; set; }
+
+    [Parameter]
+    public float RangeNm { get; set; } = 50.0f;
+
+    [Parameter]
+    public EventCallback<AircraftModel> OnAircraftSelected { get; set; }
+
+    [Parameter]
+    public int CanvasWidth { get; set; } = 1024;
+
+    [Parameter]
+    public int CanvasHeight { get; set; } = 768;
+
+    private ElementReference radarCanvas;
+    private ElementReference radarContainer;
+    private AircraftModel? SelectedAircraft { get; set; }
+
+    // Pan and zoom state
+    private Vector2 panOffset = new Vector2(0, 0);
+    private float zoomLevel = 1.0f;
+    private bool isPanning = false;
+    private Vector2 lastMousePos = new Vector2(0, 0);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("radarDisplay.initialize", radarCanvas);
+        }
+
+        await DrawRadar();
+    }
+
+    private async Task DrawRadar()
+    {
+        var centerX = CanvasWidth / 2.0f;
+        var centerY = CanvasHeight / 2.0f;
+
+        // Clear canvas
+        await JS.InvokeVoidAsync("radarDisplay.clearCanvas", radarCanvas);
+
+        // Draw range rings
+        await DrawRangeRings(centerX, centerY);
+
+        // Draw fixes
+        foreach (var fix in Fixes)
+        {
+            await DrawFix(fix, centerX, centerY);
+        }
+
+        // Draw airport
+        if (Airport != null)
+        {
+            await DrawAirport(Airport, centerX, centerY);
+        }
+
+        // Draw aircraft
+        foreach (var aircraft in Aircraft)
+        {
+            await DrawAircraft(aircraft, centerX, centerY);
+        }
+
+        // Draw aircraft data tags
+        foreach (var aircraft in Aircraft)
+        {
+            await DrawDataTag(aircraft, centerX, centerY);
+        }
+    }
+
+    private async Task DrawRangeRings(float centerX, float centerY)
+    {
+        var ringCount = 5;
+        var pixelsPerNm = Math.Min(CanvasWidth, CanvasHeight) / (2.0f * RangeNm) * zoomLevel;
+
+        for (int i = 1; i <= ringCount; i++)
+        {
+            var radiusNm = RangeNm * i / ringCount;
+            var radiusPx = radiusNm * pixelsPerNm;
+
+            await JS.InvokeVoidAsync("radarDisplay.drawCircle",
+                radarCanvas,
+                centerX + panOffset.X,
+                centerY + panOffset.Y,
+                radiusPx,
+                "#2a4a2a",
+                1);
+
+            // Draw range label
+            await JS.InvokeVoidAsync("radarDisplay.drawText",
+                radarCanvas,
+                $"{(int)radiusNm} NM",
+                centerX + panOffset.X,
+                centerY + panOffset.Y - radiusPx - 5,
+                "#4a7a4a",
+                "12px monospace");
+        }
+    }
+
+    private async Task DrawFix(Fix fix, float centerX, float centerY)
+    {
+        var (screenX, screenY) = NmToScreen(fix.PositionNm, centerX, centerY);
+
+        // Draw fix symbol (triangle)
+        await JS.InvokeVoidAsync("radarDisplay.drawTriangle",
+            radarCanvas,
+            screenX,
+            screenY,
+            6,
+            "#8888ff");
+
+        // Draw fix label
+        await JS.InvokeVoidAsync("radarDisplay.drawText",
+            radarCanvas,
+            fix.Identifier,
+            screenX + 8,
+            screenY - 8,
+            "#aaaaff",
+            "11px monospace");
+    }
+
+    private async Task DrawAirport(AirportModel airport, float centerX, float centerY)
+    {
+        var (screenX, screenY) = NmToScreen(airport.PositionNm, centerX, centerY);
+
+        // Draw airport symbol (square)
+        await JS.InvokeVoidAsync("radarDisplay.drawRect",
+            radarCanvas,
+            screenX - 4,
+            screenY - 4,
+            8,
+            8,
+            "#ffaa00");
+
+        // Draw airport label
+        await JS.InvokeVoidAsync("radarDisplay.drawText",
+            radarCanvas,
+            airport.IcaoCode,
+            screenX + 8,
+            screenY + 4,
+            "#ffcc00",
+            "bold 12px monospace");
+    }
+
+    private async Task DrawAircraft(AircraftModel aircraft, float centerX, float centerY)
+    {
+        var (screenX, screenY) = NmToScreen(aircraft.PositionNm, centerX, centerY);
+        var isSelected = SelectedAircraft == aircraft;
+        var color = isSelected ? "#00ff00" : "#00cc00";
+
+        // Draw aircraft symbol (chevron pointing in heading direction)
+        var headingRad = aircraft.HeadingRadians;
+        await JS.InvokeVoidAsync("radarDisplay.drawChevron",
+            radarCanvas,
+            screenX,
+            screenY,
+            8,
+            headingRad,
+            color);
+
+        // Draw history trail
+        await DrawHistoryTrail(aircraft, centerX, centerY);
+
+        // Draw target heading line if different from current
+        if (aircraft.TargetHeadingDegrees.HasValue)
+        {
+            var targetRad = aircraft.TargetHeadingDegrees.Value * SimulationConstants.DegreesToRadians;
+            var lineLength = 30;
+            var endX = screenX + lineLength * (float)Math.Cos(targetRad);
+            var endY = screenY - lineLength * (float)Math.Sin(targetRad);
+
+            await JS.InvokeVoidAsync("radarDisplay.drawLine",
+                radarCanvas,
+                screenX,
+                screenY,
+                endX,
+                endY,
+                "#ffff00",
+                1,
+                true); // dashed
+        }
+    }
+
+    private async Task DrawDataTag(AircraftModel aircraft, float centerX, float centerY)
+    {
+        var (screenX, screenY) = NmToScreen(aircraft.PositionNm, centerX, centerY);
+        var isSelected = SelectedAircraft == aircraft;
+
+        // Position data tag to the right of aircraft
+        var tagX = screenX + 15;
+        var tagY = screenY - 10;
+
+        var lines = new[]
+        {
+            aircraft.Callsign,
+            $"{(int)(aircraft.AltitudeFt / 100):D3} {(int)aircraft.SpeedKnots:D3}"
+        };
+
+        var bgColor = isSelected ? "rgba(0, 50, 0, 0.8)" : "rgba(0, 30, 0, 0.7)";
+        var textColor = isSelected ? "#00ff00" : "#00cc00";
+
+        // Draw background box
+        await JS.InvokeVoidAsync("radarDisplay.drawTextBox",
+            radarCanvas,
+            tagX,
+            tagY,
+            lines,
+            bgColor,
+            textColor,
+            "11px monospace");
+    }
+
+    private async Task DrawHistoryTrail(AircraftModel aircraft, float centerX, float centerY)
+    {
+        // TODO: Implement history trail when position history is added to aircraft model
+        await Task.CompletedTask;
+    }
+
+    private (float x, float y) NmToScreen(Vector2 positionNm, float centerX, float centerY)
+    {
+        var pixelsPerNm = Math.Min(CanvasWidth, CanvasHeight) / (2.0f * RangeNm) * zoomLevel;
+
+        var screenX = centerX + (positionNm.X * pixelsPerNm) + panOffset.X;
+        var screenY = centerY - (positionNm.Y * pixelsPerNm) + panOffset.Y; // Y is inverted
+
+        return (screenX, screenY);
+    }
+
+    private Vector2 ScreenToNm(float screenX, float screenY, float centerX, float centerY)
+    {
+        var pixelsPerNm = Math.Min(CanvasWidth, CanvasHeight) / (2.0f * RangeNm) * zoomLevel;
+
+        var nmX = (screenX - centerX - panOffset.X) / pixelsPerNm;
+        var nmY = -(screenY - centerY - panOffset.Y) / pixelsPerNm; // Y is inverted
+
+        return new Vector2(nmX, nmY);
+    }
+
+    private async Task OnMouseDown(MouseEventArgs e)
+    {
+        var centerX = CanvasWidth / 2.0f;
+        var centerY = CanvasHeight / 2.0f;
+        var clickPos = new Vector2((float)e.OffsetX, (float)e.OffsetY);
+
+        if (e.Button == 0) // Left click
+        {
+            // Check if clicked on aircraft
+            AircraftModel? clickedAircraft = null;
+            float minDistance = 20; // Click tolerance in pixels
+
+            foreach (var aircraft in Aircraft)
+            {
+                var (screenX, screenY) = NmToScreen(aircraft.PositionNm, centerX, centerY);
+                var distance = (float)Math.Sqrt(
+                    Math.Pow(clickPos.X - screenX, 2) +
+                    Math.Pow(clickPos.Y - screenY, 2));
+
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    clickedAircraft = aircraft;
+                }
+            }
+
+            if (clickedAircraft != null)
+            {
+                SelectedAircraft = clickedAircraft;
+                await OnAircraftSelected.InvokeAsync(clickedAircraft);
+            }
+            else
+            {
+                SelectedAircraft = null;
+            }
+        }
+        else if (e.Button == 2) // Right click - start panning
+        {
+            isPanning = true;
+            lastMousePos = clickPos;
+        }
+
+        await DrawRadar();
+    }
+
+    private async Task OnMouseMove(MouseEventArgs e)
+    {
+        if (isPanning)
+        {
+            var currentPos = new Vector2((float)e.OffsetX, (float)e.OffsetY);
+            var delta = currentPos - lastMousePos;
+
+            panOffset += delta;
+            lastMousePos = currentPos;
+
+            await DrawRadar();
+        }
+    }
+
+    private void OnMouseUp(MouseEventArgs e)
+    {
+        if (e.Button == 2) // Right click released
+        {
+            isPanning = false;
+        }
+    }
+
+    private async Task OnWheel(WheelEventArgs e)
+    {
+        var zoomFactor = e.DeltaY > 0 ? 0.9f : 1.1f;
+        zoomLevel = Math.Clamp(zoomLevel * zoomFactor, 0.5f, 4.0f);
+
+        await DrawRadar();
+    }
+
+    public async Task UpdateDisplay()
+    {
+        await DrawRadar();
+    }
+}

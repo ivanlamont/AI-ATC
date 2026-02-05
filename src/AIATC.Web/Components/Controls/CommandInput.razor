@@ -1,0 +1,185 @@
+@using AIATC.Domain.Models.Commands
+
+<div class="command-input-container">
+    <div class="command-history">
+        @foreach (var entry in CommandHistory.TakeLast(10).Reverse())
+        {
+            <div class="history-entry @(entry.IsValid ? "valid" : "invalid")">
+                <span class="timestamp">@entry.Timestamp.ToString("HH:mm:ss")</span>
+                <span class="callsign">@entry.Callsign</span>
+                <span class="command">@entry.CommandText</span>
+                @if (!entry.IsValid && !string.IsNullOrEmpty(entry.Error))
+                {
+                    <span class="error">@entry.Error</span>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="input-area">
+        @if (!string.IsNullOrEmpty(SelectedCallsign))
+        {
+            <span class="selected-callsign">@SelectedCallsign:</span>
+        }
+        <input @ref="commandInput"
+               type="text"
+               @bind="CurrentCommand"
+               @bind:event="oninput"
+               @onkeydown="OnKeyDown"
+               placeholder="Enter command..."
+               class="command-input"
+               autocomplete="off" />
+
+        @if (Suggestions.Any())
+        {
+            <div class="suggestions">
+                @foreach (var suggestion in Suggestions.Take(5))
+                {
+                    <div class="suggestion" @onclick="() => ApplySuggestion(suggestion)">
+                        @suggestion
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="quick-commands">
+        <button @onclick='() => QuickCommand("turn left heading ")'>↶ Turn Left</button>
+        <button @onclick='() => QuickCommand("turn right heading ")'>↷ Turn Right</button>
+        <button @onclick='() => QuickCommand("descend and maintain ")'>↓ Descend</button>
+        <button @onclick='() => QuickCommand("climb and maintain ")'>↑ Climb</button>
+        <button @onclick='() => QuickCommand("reduce speed ")'>⊖ Slow</button>
+        <button @onclick='() => QuickCommand("proceed direct ")'>→ Direct</button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string? SelectedCallsign { get; set; }
+
+    [Parameter]
+    public EventCallback<CommandEntry> OnCommandSubmitted { get; set; }
+
+    [Parameter]
+    public AtcCommandParser Parser { get; set; } = new();
+
+    private ElementReference commandInput;
+    private string CurrentCommand { get; set; } = string.Empty;
+    private List<string> Suggestions { get; set; } = new();
+    private List<CommandEntry> CommandHistory { get; set; } = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await commandInput.FocusAsync();
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SubmitCommand();
+        }
+        else if (e.Key == "Escape")
+        {
+            CurrentCommand = string.Empty;
+            Suggestions.Clear();
+        }
+        else
+        {
+            // Update suggestions as user types
+            await Task.Delay(100);
+            UpdateSuggestions();
+        }
+    }
+
+    private async Task SubmitCommand()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentCommand))
+            return;
+
+        if (string.IsNullOrEmpty(SelectedCallsign))
+        {
+            // No aircraft selected
+            var entry = new CommandEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                Callsign = "",
+                CommandText = CurrentCommand,
+                IsValid = false,
+                Error = "No aircraft selected"
+            };
+
+            CommandHistory.Add(entry);
+            CurrentCommand = string.Empty;
+            Suggestions.Clear();
+            return;
+        }
+
+        // Try to parse the command
+        var command = Parser.Parse(CurrentCommand);
+
+        var commandEntry = new CommandEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            Callsign = SelectedCallsign,
+            CommandText = CurrentCommand,
+            IsValid = command != null,
+            ParsedCommand = command,
+            Error = command == null ? "Invalid command" : null
+        };
+
+        CommandHistory.Add(commandEntry);
+
+        if (command != null)
+        {
+            await OnCommandSubmitted.InvokeAsync(commandEntry);
+        }
+
+        CurrentCommand = string.Empty;
+        Suggestions.Clear();
+        StateHasChanged();
+    }
+
+    private void UpdateSuggestions()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentCommand))
+        {
+            Suggestions.Clear();
+            return;
+        }
+
+        Suggestions = Parser.GetSuggestions(CurrentCommand);
+        StateHasChanged();
+    }
+
+    private void ApplySuggestion(string suggestion)
+    {
+        CurrentCommand = suggestion;
+        Suggestions.Clear();
+    }
+
+    private void QuickCommand(string commandPrefix)
+    {
+        CurrentCommand = commandPrefix;
+        Suggestions.Clear();
+        StateHasChanged();
+    }
+
+    public async Task FocusInput()
+    {
+        await commandInput.FocusAsync();
+    }
+
+    public class CommandEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string Callsign { get; set; } = string.Empty;
+        public string CommandText { get; set; } = string.Empty;
+        public bool IsValid { get; set; }
+        public AtcCommand? ParsedCommand { get; set; }
+        public string? Error { get; set; }
+    }
+}

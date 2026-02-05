@@ -1,0 +1,203 @@
+.simulation-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #000800;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+}
+
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: rgba(0, 40, 0, 0.8);
+    border-bottom: 2px solid #004400;
+}
+
+.airport-info h2 {
+    margin: 0;
+    color: #00ff00;
+    font-size: 20px;
+}
+
+.scenario-info {
+    color: #00aa00;
+    font-size: 12px;
+}
+
+.score-display {
+    display: flex;
+    gap: 20px;
+}
+
+.score-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.score-item .label {
+    font-size: 11px;
+    color: #00aa00;
+}
+
+.score-item .value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #00ff00;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.control-btn {
+    background: rgba(0, 80, 0, 0.8);
+    border: 1px solid #00aa00;
+    border-radius: 4px;
+    padding: 8px 16px;
+    color: #00cc00;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.control-btn:hover {
+    background: rgba(0, 120, 0, 0.9);
+    border-color: #00ff00;
+    color: #00ff00;
+}
+
+.control-btn.active {
+    background: rgba(0, 120, 0, 0.9);
+    border-color: #00ff00;
+}
+
+.speed-select {
+    background: rgba(0, 40, 0, 0.8);
+    border: 1px solid #00aa00;
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: #00cc00;
+    cursor: pointer;
+}
+
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.radar-section {
+    flex: 1;
+    padding: 10px;
+}
+
+.control-section {
+    width: 350px;
+    padding: 10px;
+    background: rgba(0, 20, 0, 0.5);
+    border-left: 2px solid #004400;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+}
+
+.happiness-indicator {
+    background: rgba(0, 30, 0, 0.8);
+    border: 1px solid #004400;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.happiness-indicator h4 {
+    margin: 0 0 8px 0;
+    color: #00aa00;
+    font-size: 13px;
+}
+
+.happiness-bar {
+    height: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid #004400;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+
+.happiness-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ff4444 0%, #ffaa00 50%, #00ff00 100%);
+    transition: width 0.3s ease;
+}
+
+.happiness-value {
+    font-size: 14px;
+    font-weight: bold;
+    color: #00ff00;
+}
+
+.happiness-details {
+    margin-top: 10px;
+    font-size: 11px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 4px 0;
+    color: #00cc00;
+}
+
+.aircraft-list {
+    background: rgba(0, 30, 0, 0.8);
+    border: 1px solid #004400;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.aircraft-list h4 {
+    margin: 0 0 8px 0;
+    color: #00aa00;
+    font-size: 13px;
+}
+
+.aircraft-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    margin: 2px 0;
+    background: rgba(0, 20, 0, 0.5);
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 12px;
+}
+
+.aircraft-item:hover {
+    background: rgba(0, 50, 0, 0.8);
+    border-color: #00aa00;
+}
+
+.aircraft-item.selected {
+    background: rgba(0, 80, 0, 0.9);
+    border-color: #00ff00;
+}
+
+.ac-callsign {
+    font-weight: bold;
+    color: #00ff00;
+    flex: 1;
+}
+
+.ac-alt,
+.ac-spd {
+    color: #00cc00;
+    margin-left: 8px;
+}

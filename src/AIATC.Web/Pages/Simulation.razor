@@ -1,0 +1,312 @@
+@page "/"
+@using AIATC.Domain.Models
+@using AIATC.Domain.Models.Commands
+@using AIATC.Domain.Models.Navigation
+@using AIATC.Domain.Models.Scoring
+@using AIATC.Web.Components.Radar
+@using AIATC.Web.Components.Controls
+@using AIATC.Web.Components.Audio
+@inject IJSRuntime JS
+
+<PageTitle>AI ATC Simulation</PageTitle>
+
+<div class="simulation-container">
+    <div class="top-bar">
+        <div class="airport-info">
+            <h2>@(airport?.IcaoCode ?? "KSFO") Approach</h2>
+            <span class="scenario-info">@scenarioName</span>
+        </div>
+
+        <div class="score-display">
+            <div class="score-item">
+                <span class="label">Score:</span>
+                <span class="value">@sessionScore.TotalScore</span>
+            </div>
+            <div class="score-item">
+                <span class="label">Aircraft:</span>
+                <span class="value">@aircraft.Count</span>
+            </div>
+            <div class="score-item">
+                <span class="label">Landings:</span>
+                <span class="value">@sessionScore.Statistics.SuccessfulLandings</span>
+            </div>
+            <div class="score-item">
+                <span class="label">Safety:</span>
+                <span class="value">@sessionScore.Statistics.GetSafetyRating().ToString("F0")%</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="control-btn @(isPaused ? "active" : "")" @onclick="TogglePause">
+                @(isPaused ? "▶ Resume" : "⏸ Pause")
+            </button>
+            <select class="speed-select" @bind="timeMultiplier">
+                <option value="1">1× Speed</option>
+                <option value="2">2× Speed</option>
+                <option value="4">4× Speed</option>
+                <option value="8">8× Speed</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="radar-section">
+            <RadarDisplay Aircraft="@aircraft"
+                          Fixes="@fixes"
+                          Airport="@airport"
+                          RangeNm="50"
+                          CanvasWidth="1024"
+                          CanvasHeight="768"
+                          OnAircraftSelected="OnAircraftSelected"
+                          @ref="radarDisplay" />
+        </div>
+
+        <div class="control-section">
+            <CommandInput SelectedCallsign="@selectedAircraft?.Callsign"
+                          OnCommandSubmitted="OnCommandSubmitted"
+                          Parser="@commandParser"
+                          @ref="commandInput" />
+
+            <VoiceCommandPanel OnCommandRecognized="HandleVoiceCommand"
+                              EnableTextToSpeech="true"
+                              Parser="@commandParser" />
+
+            @if (selectedAircraft != null && aircraftHappiness.TryGetValue(selectedAircraft.Callsign, out var happiness))
+            {
+                <div class="happiness-indicator">
+                    <h4>Aircraft Happiness</h4>
+                    <div class="happiness-bar">
+                        <div class="happiness-fill" style="width: @(happiness.Happiness)%"></div>
+                    </div>
+                    <span class="happiness-value">@happiness.Happiness.ToString("F0")%</span>
+
+                    <div class="happiness-details">
+                        <div class="detail-row">
+                            <span>Commands:</span>
+                            <span>@happiness.CommandCount</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Efficiency:</span>
+                            <span>@happiness.GetRouteEfficiency().ToString("P0")</span>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="aircraft-list">
+                <h4>Aircraft (@aircraft.Count)</h4>
+                @foreach (var ac in aircraft.OrderBy(a => a.Callsign))
+                {
+                    <div class="aircraft-item @(selectedAircraft == ac ? "selected" : "")"
+                         @onclick="() => SelectAircraft(ac)">
+                        <span class="ac-callsign">@ac.Callsign</span>
+                        <span class="ac-alt">@((int)(ac.AltitudeFt / 100))↑</span>
+                        <span class="ac-spd">@((int)ac.SpeedKnots)</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private RadarDisplay? radarDisplay;
+    private CommandInput? commandInput;
+
+    // Simulation state
+    private List<AircraftModel> aircraft = new();
+    private List<Fix> fixes = new();
+    private AirportModel? airport;
+    private AircraftModel? selectedAircraft;
+    private string scenarioName = "Basic Traffic Pattern";
+
+    // Services
+    private AtcCommandParser commandParser = new();
+    private ClearanceApplicator clearanceApplicator = new();
+    private ScoringService scoringService = new();
+    private NavigationDatabase navigationDatabase = new();
+
+    // Simulation control
+    private bool isPaused = true;
+    private float timeMultiplier = 1.0f;
+    private System.Threading.Timer? simulationTimer;
+
+    // Scoring
+    private SessionScore sessionScore = new();
+    private Dictionary<string, AircraftHappiness> aircraftHappiness = new();
+
+    protected override void OnInitialized()
+    {
+        // Initialize with sample data
+        airport = new AirportModel
+        {
+            IcaoCode = "KSFO",
+            PositionNm = new Vector2(0, 0),
+            AltitudeFt = 13
+        };
+
+        // Load sample navigation data
+        navigationDatabase = SampleNavigationData.CreateSampleDatabase();
+        fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 100);
+
+        // Start scoring session
+        scoringService.StartNewSession($"session-{DateTime.UtcNow:yyyyMMdd-HHmmss}", timeMultiplier);
+        sessionScore = scoringService.GetCurrentSession();
+
+        // Spawn sample aircraft
+        SpawnSampleAircraft();
+
+        // Start simulation loop
+        simulationTimer = new System.Threading.Timer(SimulationTick, null, 0, 100); // 10 Hz
+    }
+
+    private void SpawnSampleAircraft()
+    {
+        var aircraft1 = new AircraftModel
+        {
+            Callsign = "UAL123",
+            PositionNm = new Vector2(-20, 15),
+            HeadingDegrees = 90,
+            SpeedKnots = 220,
+            AltitudeFt = 8000,
+            MinSpeedKnots = 160,
+            MaxSpeedKnots = 280
+        };
+
+        var aircraft2 = new AircraftModel
+        {
+            Callsign = "DAL456",
+            PositionNm = new Vector2(15, -18),
+            HeadingDegrees = 270,
+            SpeedKnots = 200,
+            AltitudeFt = 10000,
+            MinSpeedKnots = 160,
+            MaxSpeedKnots = 280
+        };
+
+        aircraft.Add(aircraft1);
+        aircraft.Add(aircraft2);
+
+        scoringService.RegisterAircraft("UAL123", 30);
+        scoringService.RegisterAircraft("DAL456", 25);
+
+        aircraftHappiness = scoringService.GetAllAircraftHappiness();
+    }
+
+    private void SimulationTick(object? state)
+    {
+        if (isPaused) return;
+
+        float deltaTime = 0.1f * timeMultiplier; // 100ms * multiplier
+
+        // Update all aircraft
+        foreach (var ac in aircraft)
+        {
+            ac.Step(deltaTime);
+
+            // Update distance tracking
+            var distFlown = ac.TotalDistanceFlown;
+            scoringService.UpdateAircraftDistance(ac.Callsign, distFlown);
+        }
+
+        // Check separation violations
+        CheckSeparation();
+
+        // Update UI
+        InvokeAsync(async () =>
+        {
+            if (radarDisplay != null)
+            {
+                await radarDisplay.UpdateDisplay();
+            }
+            StateHasChanged();
+        });
+    }
+
+    private void CheckSeparation()
+    {
+        for (int i = 0; i < aircraft.Count; i++)
+        {
+            for (int j = i + 1; j < aircraft.Count; j++)
+            {
+                var sep = (aircraft[i].PositionNm - aircraft[j].PositionNm).Magnitude;
+
+                if (sep < SimulationConstants.MinimumSeparationNm)
+                {
+                    scoringService.RecordSeparationViolation(
+                        aircraft[i].Callsign,
+                        aircraft[j].Callsign,
+                        sep
+                    );
+                }
+            }
+        }
+    }
+
+    private void TogglePause()
+    {
+        isPaused = !isPaused;
+    }
+
+    private async Task OnAircraftSelected(AircraftModel aircraft)
+    {
+        selectedAircraft = aircraft;
+        if (commandInput != null)
+        {
+            await commandInput.FocusInput();
+        }
+    }
+
+    private void SelectAircraft(AircraftModel aircraft)
+    {
+        selectedAircraft = aircraft;
+    }
+
+    private async Task OnCommandSubmitted(CommandInput.CommandEntry entry)
+    {
+        if (entry.ParsedCommand == null || selectedAircraft == null)
+            return;
+
+        // Apply command to aircraft
+        var (valid, error) = clearanceApplicator.ValidateCommand(entry.ParsedCommand, selectedAircraft);
+
+        if (valid)
+        {
+            clearanceApplicator.ApplyCommand(entry.ParsedCommand, selectedAircraft);
+            scoringService.RecordCommand(selectedAircraft.Callsign, entry.ParsedCommand);
+
+            aircraftHappiness = scoringService.GetAllAircraftHappiness();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task HandleVoiceCommand(string transcript)
+    {
+        // Parse the voice command
+        var parsedCommand = commandParser.Parse(transcript);
+
+        if (parsedCommand != null && selectedAircraft != null)
+        {
+            // Apply the voice command to the currently selected aircraft
+            var (valid, error) = clearanceApplicator.ValidateCommand(parsedCommand, selectedAircraft);
+
+            if (valid)
+            {
+                clearanceApplicator.ApplyCommand(parsedCommand, selectedAircraft);
+                scoringService.RecordCommand(selectedAircraft.Callsign, parsedCommand);
+
+                aircraftHappiness = scoringService.GetAllAircraftHappiness();
+
+                // Provide audio feedback
+                await Task.CompletedTask; // VoiceCommandPanel handles TTS internally
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        simulationTimer?.Dispose();
+        scoringService.EndSession();
+    }
+}

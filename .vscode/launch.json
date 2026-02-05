@@ -28,6 +28,17 @@
                 "TF_FORCE_GPU_ALLOW_GROWTH": "true",
                 "CUDA_VISIBLE_DEVICES": "0"
             }
+        },
+        {
+            "name": "AI-ATC: Run Web App",
+            "type": "blazorwasm",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/src/AIATC.Web",
+            "program": "${workspaceFolder}/src/AIATC.Web/bin/Debug/net10.0/AIATC.Web.dll",
+            "launchBrowser": true,
+            "applicationUrl": "https://localhost:5001",
+            "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
+            "browser": "chrome"
         }
     ]
 }

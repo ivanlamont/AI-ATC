@@ -1,0 +1,50 @@
+replicaCount: 3
+
+image:
+  repository: aiatc
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 80
+  targetPort: 5000
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: aiatc.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+postgresql:
+  enabled: true
+  auth:
+    username: aiatc
+    password: aiatc_k8s_password
+    database: aiatc
+
+redis:
+  enabled: true
+  auth:
+    enabled: false
+
+env:
+  ASPNETCORE_ENVIRONMENT: Production
+  LOG_LEVEL: Information

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: aiatc
+description: AI Air Traffic Control application Helm chart
+type: application
+version: 0.1.0
+appVersion: "1.0"
+keywords:
+  - air-traffic-control
+  - simulation
+  - kubernetes
+maintainers:
+  - name: Development Team
+    email: dev@aiatc.local

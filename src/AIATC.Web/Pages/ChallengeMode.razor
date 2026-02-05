@@ -1,0 +1,747 @@
+@page "/challenge"
+@using AIATC.Domain.Services
+@using AIATC.Domain.Models
+@using AIATC.Domain.Models.Scenarios
+@using AIATC.Common
+@using System.Timers
+
+@inject ChallengeModeService ChallengeService
+@inject ILogger<ChallengeMode> Logger
+
+<div class="challenge-container">
+    <!-- Header -->
+    <div class="challenge-header">
+        <h1>Challenge Mode: AI vs Human</h1>
+        <div class="challenge-controls">
+            <button @onclick="() => StartChallenge()" disabled="@(ChallengeService.State != ChallengeState.Ready)">
+                Start Challenge
+            </button>
+            <button @onclick="() => PauseChallenge()" disabled="@(ChallengeService.State != ChallengeState.Running)">
+                Pause
+            </button>
+            <button @onclick="() => ResumeChallenge()" disabled="@(ChallengeService.State != ChallengeState.Paused)">
+                Resume
+            </button>
+            <button @onclick="() => EndChallenge()" disabled="@(ChallengeService.State != ChallengeState.Running && ChallengeService.State != ChallengeState.Paused)">
+                End Challenge
+            </button>
+        </div>
+        <div class="challenge-info">
+            <span>Time: @ChallengeService.SimulationTimeSeconds.ToString("F1")s</span>
+            <span>Speed: @ChallengeService.TimeMultiplier.ToString("F1")x</span>
+            <select @onchange="ChangeTimeScale">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="2">2x</option>
+                <option value="4">4x</option>
+            </select>
+            <label>
+                <input type="checkbox" @bind="ChallengeService.ShowAIPredictions" />
+                Show AI Predictions
+            </label>
+        </div>
+    </div>
+
+    <!-- Split Screen -->
+    <div class="challenge-split-screen">
+        <!-- User Side (Left) -->
+        <div class="challenge-side user-side">
+            <div class="side-header">
+                <h2>YOUR CONTROL</h2>
+                <div class="score-display">
+                    <div class="score-label">Your Score</div>
+                    <div class="score-value">@(CurrentComparison?.UserScore?.TotalScore.ToString("F0") ?? "0")</div>
+                </div>
+            </div>
+
+            <div class="radar-container">
+                <canvas @ref="userRadarCanvas" width="512" height="512"></canvas>
+            </div>
+
+            <div class="command-section">
+                <div class="command-input-area">
+                    <input type="text"
+                           @bind="userCommandInput"
+                           @onkeydown="HandleUserCommandKeyPress"
+                           placeholder="Enter ATC command (e.g., 'turn right heading 270')"
+                           disabled="@(ChallengeService.State != ChallengeState.Running)" />
+                    <button @onclick="() => SubmitUserCommand()"
+                            disabled="@(string.IsNullOrEmpty(userCommandInput) || ChallengeService.State != ChallengeState.Running)">
+                        Send
+                    </button>
+                </div>
+
+                <div class="command-history">
+                    <h3>Command History (@(ChallengeService.UserCommandHistory.Count))</h3>
+                    <div class="history-list">
+                        @foreach (var cmd in ChallengeService.UserCommandHistory.OrderByDescending(c => c.Timestamp).Take(10))
+                        {
+                            <div class="history-entry human-command">
+                                <span class="timestamp">@cmd.Timestamp.ToString("F1")s</span>
+                                <span class="callsign">@cmd.TargetCallsign</span>
+                                <span class="command">@cmd.CommandText</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Score Comparison (Center) -->
+        <div class="challenge-comparison">
+            <div class="comparison-header">Score Comparison</div>
+
+            @if (CurrentComparison != null)
+            {
+                <div class="score-row">
+                    <div class="score-item human-score">
+                        <div class="score-title">Human</div>
+                        <div class="score-big">@CurrentComparison.UserScore.TotalScore.ToString("F0")</div>
+                        <div class="score-detail">
+                            <div>Aircraft: @CurrentComparison.UserAircraftCount</div>
+                            <div>Commands: @CurrentComparison.UserCommandCount</div>
+                            <div>Violations: @CurrentComparison.UserScore.Statistics.SeparationViolations</div>
+                        </div>
+                    </div>
+
+                    <div class="comparison-divider">
+                        <div class="vs-text">VS</div>
+                        @if (ChallengeService.State == ChallengeState.Completed)
+                        {
+                            <div class="winner-badge">
+                                @if (GetWinner() == "Human")
+                                {
+                                    <span class="winner human">YOU WIN!</span>
+                                }
+                                else if (GetWinner() == "AI")
+                                {
+                                    <span class="winner ai">AI WINS!</span>
+                                }
+                                else
+                                {
+                                    <span class="winner tie">TIE</span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="score-item ai-score">
+                        <div class="score-title">AI Agent</div>
+                        <div class="score-big">@CurrentComparison.AiScore.TotalScore.ToString("F0")</div>
+                        <div class="score-detail">
+                            <div>Aircraft: @CurrentComparison.AiAircraftCount</div>
+                            <div>Commands: @CurrentComparison.AiCommandCount</div>
+                            <div>Violations: @CurrentComparison.AiScore.Statistics.SeparationViolations</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stats-comparison">
+                    <div class="stat-row">
+                        <span>Efficiency</span>
+                        <span>@(CurrentComparison.UserScore.Statistics.TotalCommands > 0 ? (CurrentComparison.UserScore.Statistics.SuccessfulLandings / (float)CurrentComparison.UserScore.Statistics.TotalCommands).ToString("F2") : "0.00")</span>
+                        <span>vs</span>
+                        <span>@(CurrentComparison.AiScore.Statistics.TotalCommands > 0 ? (CurrentComparison.AiScore.Statistics.SuccessfulLandings / (float)CurrentComparison.AiScore.Statistics.TotalCommands).ToString("F2") : "0.00")</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>Safety Rating</span>
+                        <span>@CurrentComparison.UserScore.Statistics.GetSafetyRating().ToString("F0")%</span>
+                        <span>vs</span>
+                        <span>@CurrentComparison.AiScore.Statistics.GetSafetyRating().ToString("F0")%</span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- AI Side (Right) -->
+        <div class="challenge-side ai-side">
+            <div class="side-header">
+                <h2>AI CONTROL</h2>
+                <div class="score-display">
+                    <div class="score-label">AI Score</div>
+                    <div class="score-value">@(CurrentComparison?.AiScore?.TotalScore.ToString("F0") ?? "0")</div>
+                </div>
+            </div>
+
+            <div class="radar-container">
+                <canvas @ref="aiRadarCanvas" width="512" height="512"></canvas>
+            </div>
+
+            <div class="command-section">
+                <div class="ai-info">
+                    <p>AI Agent is making decisions based on game state analysis.</p>
+                </div>
+
+                <div class="command-history">
+                    <h3>AI Commands (@(ChallengeService.AiCommandHistory.Count))</h3>
+                    <div class="history-list">
+                        @foreach (var cmd in ChallengeService.AiCommandHistory.OrderByDescending(c => c.Timestamp).Take(10))
+                        {
+                            <div class="history-entry ai-command">
+                                <span class="timestamp">@cmd.Timestamp.ToString("F1")s</span>
+                                <span class="callsign">@cmd.TargetCallsign</span>
+                                <span class="command">@cmd.CommandText</span>
+                                <span class="confidence" title="AI Confidence">@cmd.Confidence.ToString("P0")</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (ChallengeService.ShowAIPredictions && ChallengeService.AIPredictions.Count > 0)
+                {
+                    <div class="predictions-section">
+                        <h3>AI Predictions</h3>
+                        <div class="predictions-list">
+                            @foreach (var pred in ChallengeService.AIPredictions.OrderByDescending(p => p.Timestamp).Take(5))
+                            {
+                                <div class="prediction-entry">
+                                    <span class="callsign">@pred.Callsign</span>
+                                    <span class="prediction">@pred.Command</span>
+                                    <span class="confidence">@pred.Confidence.ToString("P0")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private Timer updateTimer;
+    private ElementReference userRadarCanvas;
+    private ElementReference aiRadarCanvas;
+    private string userCommandInput = "";
+    private ChallengeComparison CurrentComparison;
+    private AircraftModel selectedUserAircraft;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize challenge mode
+        ChallengeService.InitializeChallenge("demo-scenario", Difficulty.Medium);
+
+        // Start update timer
+        updateTimer = new Timer(100); // Update every 100ms (10 Hz)
+        updateTimer.Elapsed += async (s, e) =>
+        {
+            ChallengeService.UpdateChallenge(0.1f); // 100ms delta
+            CurrentComparison = ChallengeService.GetCurrentComparison();
+            await InvokeAsync(StateHasChanged);
+        };
+        updateTimer.Start();
+    }
+
+    private void StartChallenge()
+    {
+        ChallengeService.StartChallenge();
+        StateHasChanged();
+    }
+
+    private void PauseChallenge()
+    {
+        ChallengeService.PauseChallenge();
+        StateHasChanged();
+    }
+
+    private void ResumeChallenge()
+    {
+        ChallengeService.ResumeChallenge();
+        StateHasChanged();
+    }
+
+    private void EndChallenge()
+    {
+        ChallengeService.EndChallenge();
+        StateHasChanged();
+    }
+
+    private void ChangeTimeScale(ChangeEventArgs e)
+    {
+        if (float.TryParse(e.Value.ToString(), out var scale))
+        {
+            ChallengeService.TimeMultiplier = scale;
+        }
+    }
+
+    private void HandleUserCommandKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            SubmitUserCommand();
+        }
+    }
+
+    private void SubmitUserCommand()
+    {
+        if (!string.IsNullOrEmpty(userCommandInput))
+        {
+            if (selectedUserAircraft != null)
+            {
+                ChallengeService.SubmitUserCommand(userCommandInput, selectedUserAircraft);
+                userCommandInput = "";
+            }
+            else
+            {
+                Logger.LogWarning("No aircraft selected");
+            }
+        }
+    }
+
+    private string GetWinner()
+    {
+        var result = ChallengeService.DetermineWinner();
+        return result.Winner;
+    }
+
+    public void Dispose()
+    {
+        updateTimer?.Dispose();
+    }
+}
+
+<style>
+.challenge-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+}
+
+.challenge-header {
+    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+    padding: 20px;
+    border-bottom: 2px solid #0080ff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.challenge-header h1 {
+    margin: 0;
+    color: #00ff00;
+    font-size: 28px;
+}
+
+.challenge-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.challenge-controls button {
+    padding: 8px 16px;
+    background: #0080ff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.challenge-controls button:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
+.challenge-controls button:hover:not(:disabled) {
+    background: #00a0ff;
+}
+
+.challenge-info {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    font-size: 14px;
+}
+
+.challenge-info select {
+    padding: 4px 8px;
+    background: #333;
+    color: #e0e0e0;
+    border: 1px solid #0080ff;
+    border-radius: 4px;
+}
+
+.challenge-split-screen {
+    display: flex;
+    flex: 1;
+    gap: 0;
+    overflow: hidden;
+}
+
+.challenge-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid #0080ff;
+    overflow-y: auto;
+}
+
+.challenge-side:last-child {
+    border-right: none;
+}
+
+.side-header {
+    background: #2a2a2a;
+    padding: 15px;
+    border-bottom: 1px solid #0080ff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.side-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #00ff00;
+}
+
+.score-display {
+    text-align: right;
+    background: #1a3a3a;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #0080ff;
+}
+
+.score-label {
+    font-size: 12px;
+    color: #aaa;
+}
+
+.score-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #00ff00;
+}
+
+.radar-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #0a0a0a;
+    padding: 10px;
+    min-height: 400px;
+}
+
+.radar-container canvas {
+    border: 2px solid #0080ff;
+    background: #000;
+    box-shadow: 0 0 10px rgba(0, 128, 255, 0.3);
+}
+
+.command-section {
+    padding: 15px;
+    background: #2a2a2a;
+    border-top: 1px solid #0080ff;
+}
+
+.command-input-area {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.command-input-area input {
+    flex: 1;
+    padding: 10px;
+    background: #1a1a1a;
+    color: #00ff00;
+    border: 1px solid #0080ff;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+}
+
+.command-input-area input:focus {
+    outline: none;
+    border-color: #00ff00;
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+}
+
+.command-input-area button {
+    padding: 10px 20px;
+    background: #0080ff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.command-input-area button:hover:not(:disabled) {
+    background: #00a0ff;
+}
+
+.command-history {
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.command-history h3 {
+    margin: 0 0 10px 0;
+    color: #00ff00;
+    font-size: 14px;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.history-entry {
+    padding: 6px;
+    background: #1a1a1a;
+    border-left: 3px solid #0080ff;
+    font-size: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.history-entry.human-command {
+    border-left-color: #00ff00;
+}
+
+.history-entry.ai-command {
+    border-left-color: #ff8000;
+}
+
+.history-entry .timestamp {
+    color: #888;
+    min-width: 50px;
+}
+
+.history-entry .callsign {
+    color: #00ff00;
+    font-weight: bold;
+    min-width: 70px;
+}
+
+.history-entry .command {
+    color: #aaa;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-entry .confidence {
+    color: #ff8000;
+    font-size: 11px;
+}
+
+.challenge-comparison {
+    flex: 0 0 200px;
+    display: flex;
+    flex-direction: column;
+    border-left: 2px solid #0080ff;
+    border-right: 2px solid #0080ff;
+    background: #1a1a1a;
+    overflow-y: auto;
+}
+
+.comparison-header {
+    padding: 15px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #0080ff;
+    font-weight: bold;
+    color: #00ff00;
+    text-align: center;
+}
+
+.score-row {
+    display: flex;
+    gap: 10px;
+    padding: 15px;
+    align-items: center;
+}
+
+.score-item {
+    flex: 1;
+    text-align: center;
+    padding: 12px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    border: 1px solid #0080ff;
+}
+
+.score-item.human-score {
+    border-color: #00ff00;
+}
+
+.score-item.ai-score {
+    border-color: #ff8000;
+}
+
+.score-title {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 5px;
+}
+
+.score-big {
+    font-size: 32px;
+    font-weight: bold;
+    color: #00ff00;
+    margin-bottom: 8px;
+}
+
+.score-item.ai-score .score-big {
+    color: #ff8000;
+}
+
+.score-detail {
+    font-size: 11px;
+    color: #888;
+    text-align: left;
+}
+
+.score-detail div {
+    margin: 2px 0;
+}
+
+.comparison-divider {
+    flex: 0 0 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.vs-text {
+    font-weight: bold;
+    color: #0080ff;
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+
+.winner-badge {
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.winner {
+    padding: 8px 12px;
+    border-radius: 4px;
+    display: block;
+}
+
+.winner.human {
+    background: #003300;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+}
+
+.winner.ai {
+    background: #330000;
+    color: #ff8000;
+    border: 1px solid #ff8000;
+}
+
+.winner.tie {
+    background: #003333;
+    color: #0080ff;
+    border: 1px solid #0080ff;
+}
+
+.stats-comparison {
+    padding: 15px;
+    font-size: 13px;
+    border-top: 1px solid #0080ff;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #333;
+}
+
+.stat-row:last-child {
+    border-bottom: none;
+}
+
+.stat-row span:nth-child(2),
+.stat-row span:nth-child(4) {
+    color: #00ff00;
+    font-weight: bold;
+    min-width: 50px;
+    text-align: right;
+}
+
+.ai-info {
+    padding: 10px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #aaa;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.predictions-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #0080ff;
+}
+
+.predictions-section h3 {
+    margin: 0 0 10px 0;
+    color: #ff8000;
+    font-size: 14px;
+}
+
+.predictions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 100px;
+    overflow-y: auto;
+}
+
+.prediction-entry {
+    padding: 4px;
+    background: #1a1a1a;
+    border-left: 2px solid #ff8000;
+    font-size: 11px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.prediction-entry .callsign {
+    color: #ff8000;
+    font-weight: bold;
+    min-width: 50px;
+}
+
+.prediction-entry .prediction {
+    color: #aaa;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10px;
+}
+
+.prediction-entry .confidence {
+    color: #888;
+    font-size: 10px;
+}
+
+@@media (max-width: 1200px) {
+    .challenge-comparison {
+        flex: 0 0 150px;
+    }
+
+    .score-big {
+        font-size: 24px;
+    }
+}
+</style>

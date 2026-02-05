@@ -46,6 +46,19 @@ This is modeled as a **reinforcement learning problem** using PPO (Proximal Poli
 
 ---
 
+## 📚 Documentation
+
+Get started quickly with comprehensive documentation:
+
+- **[🚀 Getting Started](docs/GETTING_STARTED.md)** — Installation and first steps
+- **[📋 ATC Command Reference](docs/ATC_COMMAND_REFERENCE.md)** — Complete command guide
+- **[🎯 Scenarios & Difficulty Levels](docs/SCENARIOS.md)** — All scenarios explained
+- **[📊 Scoring System](docs/SCORING_SYSTEM.md)** — How scoring works
+- **[🏆 Best Practices](docs/BEST_PRACTICES.md)** — Expert techniques and strategies
+- **[❓ FAQ](docs/FAQ.md)** — Frequently asked questions
+- **[⌨️ Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)** — All keyboard shortcuts
+- **[🔧 Troubleshooting](docs/TROUBLESHOOTING.md)** — Common issues and solutions
+
 ## 🧰 Technology Stack
 
 * **Python 3.11**
