@@ -12,6 +12,15 @@
                 <span>⚠️ Voice commands not available in this browser</span>
             </div>
         }
+        else if (!_hasPermission)
+        {
+            <button class="permission-button"
+                    @onclick="RequestPermission"
+                    title="Request microphone permission">
+                <span>🎤</span>
+                <span>Allow Microphone</span>
+            </button>
+        }
         else
         {
             <button class="mic-button @(_isListening ? "listening" : "")"
@@ -73,6 +82,7 @@
     private bool _isInitialized;
     private bool _isListening;
     private bool _ttsEnabled = true;
+    private bool _hasPermission;
     private string? _lastTranscript;
     private string? _lastError;
 
@@ -83,10 +93,14 @@
 
         if (_isInitialized)
         {
+            // Check current permission status
+            _hasPermission = await SpeechRecognition.HasPermissionAsync();
+
             SpeechRecognition.SpeechRecognized += OnSpeechRecognized;
             SpeechRecognition.SpeechError += OnSpeechError;
             SpeechRecognition.ListeningStarted += OnListeningStarted;
             SpeechRecognition.ListeningStopped += OnListeningStopped;
+            SpeechRecognition.PermissionDenied += OnPermissionDenied;
         }
 
         // Initialize TTS
@@ -99,6 +113,25 @@
     private async Task ToggleMicrophone()
     {
         await SpeechRecognition.ToggleListeningAsync();
+    }
+
+    private async Task RequestPermission()
+    {
+        _lastError = null;
+        var granted = await SpeechRecognition.RequestPermissionAsync();
+
+        if (granted)
+        {
+            _hasPermission = true;
+            _lastError = "Microphone permission granted!";
+        }
+        else
+        {
+            _hasPermission = false;
+            _lastError = "Microphone permission denied. Please allow microphone access in your browser settings.";
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ToggleTts()
@@ -144,6 +177,14 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async void OnPermissionDenied(object? sender, EventArgs e)
+    {
+        _isListening = false;
+        _hasPermission = false;
+        _lastError = "Microphone permission was denied or revoked.";
+        await InvokeAsync(StateHasChanged);
+    }
+
     /// <summary>
     /// Speaks pilot readback (called from parent)
     /// </summary>
@@ -164,6 +205,7 @@
             SpeechRecognition.SpeechError -= OnSpeechError;
             SpeechRecognition.ListeningStarted -= OnListeningStarted;
             SpeechRecognition.ListeningStopped -= OnListeningStopped;
+            SpeechRecognition.PermissionDenied -= OnPermissionDenied;
 
             await SpeechRecognition.DisposeAsync();
         }

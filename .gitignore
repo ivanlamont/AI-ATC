@@ -10,3 +10,13 @@ obj/
 *.vsidx
 .vs/AIATC/
 docs/
+.deploy-files/
+terraform/azure/terraform.tfvars
+GITHUB_ACTIONS_SETUP.md
+deploy-now.bat
+deploy-static-app-v2.ps1
+deploy-static-app.ps1
+deploy-to-azure.ps1
+deploy-prepare-manual.ps1
+terraform/azure/.terraform/providers/registry.terraform.io/hashicorp/azurerm/3.117.1/windows_amd64/terraform-provider-azurerm_v3.117.1_x5.exe
+terraform/azure/.terraform/providers/registry.terraform.io/hashicorp/azurerm/3.117.1/windows_amd64/LICENSE.txt

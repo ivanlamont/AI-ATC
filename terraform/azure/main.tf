@@ -19,16 +19,16 @@ resource "azurerm_resource_group" "aiatc" {
   tags     = var.common_tags
 }
 
-# Container Registry
+# Container Registry - Cost optimized
 resource "azurerm_container_registry" "aiatc" {
   name                = var.container_registry_name
   resource_group_name = azurerm_resource_group.aiatc.name
   location            = azurerm_resource_group.aiatc.location
-  sku                 = "Standard"
+  sku                 = "Basic"  # Changed from Standard to Basic for cost savings
   admin_enabled       = true
 }
 
-# AKS Cluster
+# AKS Cluster - Cost optimized for 3 users
 resource "azurerm_kubernetes_cluster" "aiatc" {
   name                = var.cluster_name
   location            = azurerm_resource_group.aiatc.location
@@ -45,10 +45,13 @@ resource "azurerm_kubernetes_cluster" "aiatc" {
     type = "SystemAssigned"
   }
 
+  # Cost optimization: Use free tier where possible
+  sku_tier = "Free"
+
   tags = var.common_tags
 }
 
-# PostgreSQL Database
+# PostgreSQL Database - Cost optimized
 resource "azurerm_postgresql_server" "aiatc" {
   name                = var.postgres_server_name
   location            = azurerm_resource_group.aiatc.location
@@ -56,10 +59,15 @@ resource "azurerm_postgresql_server" "aiatc" {
 
   administrator_login          = var.db_admin_username
   administrator_login_password = var.db_admin_password
-  version                      = "12"
+  version                      = "11"
   ssl_enforcement_enabled      = true
 
-  sku_name = "GP_Gen5_2"
+  # Cost optimization: Use Basic tier instead of General Purpose
+  sku_name = "B_Gen5_1"  # 1 vCore, Basic tier
+
+  # Cost optimization: Use minimal storage
+  storage_mb                   = 5120  # 5GB minimum
+  backup_retention_days        = 7     # Minimal retention
 
   tags = var.common_tags
 }
@@ -72,26 +80,26 @@ resource "azurerm_postgresql_database" "aiatc" {
   collation           = "en_US.utf8"
 }
 
-# Redis Cache
+# Redis Cache - Cost optimized
 resource "azurerm_redis_cache" "aiatc" {
   name                = var.redis_cache_name
   location            = azurerm_resource_group.aiatc.location
   resource_group_name = azurerm_resource_group.aiatc.name
-  capacity            = 2
+  capacity            = 0    # Basic tier (C0)
   family              = "C"
-  sku_name            = "Standard"
+  sku_name            = "Basic"  # Changed from Standard to Basic
   enable_non_ssl_port = false
 
   tags = var.common_tags
 }
 
-# Storage Account
+# Storage Account - Cost optimized
 resource "azurerm_storage_account" "aiatc" {
   name                     = var.storage_account_name
   resource_group_name      = azurerm_resource_group.aiatc.name
   location                 = azurerm_resource_group.aiatc.location
   account_tier             = "Standard"
-  account_replication_type = "GRS"
+  account_replication_type = "LRS"  # Changed from GRS to LRS for cost savings
 
   tags = var.common_tags
 }

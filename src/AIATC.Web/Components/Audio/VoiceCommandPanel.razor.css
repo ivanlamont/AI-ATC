@@ -19,7 +19,8 @@
 }
 
 .mic-button,
-.tts-button {
+.tts-button,
+.permission-button {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -35,7 +36,8 @@
 }
 
 .mic-button:hover,
-.tts-button:hover {
+.tts-button:hover,
+.permission-button:hover {
     background: rgba(0, 100, 0, 0.9);
     border-color: #00ff00;
     color: #00ff00;

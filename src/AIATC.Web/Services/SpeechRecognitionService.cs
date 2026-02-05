@@ -17,6 +17,7 @@ public class SpeechRecognitionService : IAsyncDisposable
     public event EventHandler<string>? SpeechError;
     public event EventHandler? ListeningStarted;
     public event EventHandler? ListeningStopped;
+    public event EventHandler? PermissionDenied;
 
     public bool IsListening => _isListening;
 
@@ -99,6 +100,39 @@ public class SpeechRecognitionService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Requests microphone permission from the user
+    /// </summary>
+    public async Task<bool> RequestPermissionAsync()
+    {
+        try
+        {
+            var granted = await _jsRuntime.InvokeAsync<bool>("speechRecognition.requestPermission");
+            return granted;
+        }
+        catch (Exception ex)
+        {
+            SpeechError?.Invoke(this, $"Permission request failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks if microphone permission has been granted
+    /// </summary>
+    public async Task<bool> HasPermissionAsync()
+    {
+        try
+        {
+            return await _jsRuntime.InvokeAsync<bool>("speechRecognition.hasPermission");
+        }
+        catch (Exception ex)
+        {
+            SpeechError?.Invoke(this, $"Permission check failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Called from JavaScript when speech is recognized
     /// </summary>
     [JSInvokable]
@@ -134,6 +168,16 @@ public class SpeechRecognitionService : IAsyncDisposable
     {
         _isListening = false;
         ListeningStopped?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Called from JavaScript when microphone permission is denied
+    /// </summary>
+    [JSInvokable]
+    public void OnPermissionDenied()
+    {
+        _isListening = false;
+        PermissionDenied?.Invoke(this, EventArgs.Empty);
     }
 
     public async ValueTask DisposeAsync()

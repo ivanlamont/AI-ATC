@@ -5,6 +5,7 @@
 @using AIATC.Domain.Models.Scoring
 @using AIATC.Web.Components.Radar
 @using AIATC.Web.Components.Controls
+@using AIATC.Web.Components.Audio
 @inject IJSRuntime JS
 
 <PageTitle>AI ATC Simulation</PageTitle>
@@ -65,6 +66,10 @@
                           OnCommandSubmitted="OnCommandSubmitted"
                           Parser="@commandParser"
                           @ref="commandInput" />
+
+            <VoiceCommandPanel OnCommandRecognized="HandleVoiceCommand"
+                              EnableTextToSpeech="true"
+                              Parser="@commandParser" />
 
             @if (selectedAircraft != null && aircraftHappiness.TryGetValue(selectedAircraft.Callsign, out var happiness))
             {
@@ -274,6 +279,29 @@
         }
 
         await Task.CompletedTask;
+    }
+
+    private async Task HandleVoiceCommand(string transcript)
+    {
+        // Parse the voice command
+        var parsedCommand = commandParser.Parse(transcript);
+
+        if (parsedCommand != null && selectedAircraft != null)
+        {
+            // Apply the voice command to the currently selected aircraft
+            var (valid, error) = clearanceApplicator.ValidateCommand(parsedCommand, selectedAircraft);
+
+            if (valid)
+            {
+                clearanceApplicator.ApplyCommand(parsedCommand, selectedAircraft);
+                scoringService.RecordCommand(selectedAircraft.Callsign, parsedCommand);
+
+                aircraftHappiness = scoringService.GetAllAircraftHappiness();
+
+                // Provide audio feedback
+                await Task.CompletedTask; // VoiceCommandPanel handles TTS internally
+            }
+        }
     }
 
     public void Dispose()
