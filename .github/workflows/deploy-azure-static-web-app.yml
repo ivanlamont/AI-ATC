@@ -14,7 +14,7 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   APP_LOCATION: "src/AIATC.Web"
-  OUTPUT_LOCATION: "dist/wwwroot"
+  BUILD_OUTPUT: "src/AIATC.Web/dist/wwwroot"
 
 jobs:
   build_and_deploy_job:
@@ -37,8 +37,11 @@ jobs:
         working-directory: ${{ env.APP_LOCATION }}
 
       - name: Build Blazor WebAssembly
-        run: dotnet publish -c Release -o ${{ env.OUTPUT_LOCATION }} --nologo
+        run: dotnet publish -c Release -o dist/wwwroot --nologo
         working-directory: ${{ env.APP_LOCATION }}
+
+      - name: Verify build output
+        run: ls -la ${{ env.BUILD_OUTPUT }}
 
       - name: Deploy to Azure Static Web Apps
         id: builddeploy
@@ -47,7 +50,7 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          app_location: "${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}"
+          app_location: "${{ env.BUILD_OUTPUT }}"
           output_location: ""
           skip_app_build: true
 
