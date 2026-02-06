@@ -40,6 +40,13 @@ jobs:
         run: dotnet publish -c Release -o ${{ env.OUTPUT_LOCATION }} --nologo
         working-directory: ${{ env.APP_LOCATION }}
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blazor-app
+          path: ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}
+          retention-days: 1
+
       - name: Deploy to Azure Static Web Apps
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
