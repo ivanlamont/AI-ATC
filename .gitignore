@@ -20,3 +20,8 @@ deploy-to-azure.ps1
 deploy-prepare-manual.ps1
 terraform/azure/.terraform/providers/registry.terraform.io/hashicorp/azurerm/3.117.1/windows_amd64/terraform-provider-azurerm_v3.117.1_x5.exe
 terraform/azure/.terraform/providers/registry.terraform.io/hashicorp/azurerm/3.117.1/windows_amd64/LICENSE.txt
+
+# Build outputs
+src/AIATC.Web/dist/
+src/AIATC.Web/bin/
+src/AIATC.Web/obj/
