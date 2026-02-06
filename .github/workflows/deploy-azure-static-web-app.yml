@@ -60,12 +60,27 @@ jobs:
 
       - name: Deploy to Azure Static Web Apps using curl
         run: |
-          curl -X POST \
+          echo "Deploying from: ${GITHUB_WORKSPACE}/deploy.zip"
+          echo "Deployment token length: ${#AZURE_STATIC_WEB_APPS_API_TOKEN}"
+          echo ""
+          curl -v -X POST \
             -H "Authorization: Bearer ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}" \
             -H "Content-Type: application/zip" \
             --data-binary "@${GITHUB_WORKSPACE}/deploy.zip" \
             "https://polite-glacier-06689200f.2.azurestaticapps.net/api/deploy?provider=zip"
+          echo ""
           echo "Deployment request sent!"
+          sleep 5
+          echo "Checking deployment status..."
+        env:
+          AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to propagate (30 seconds)..."
+          sleep 30
+          echo "Checking if app is accessible..."
+          curl -I https://polite-glacier-06689200f.2.azurestaticapps.net 2>&1 | head -5
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
