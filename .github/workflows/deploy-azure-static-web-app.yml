@@ -37,7 +37,7 @@ jobs:
         working-directory: ${{ env.APP_LOCATION }}
 
       - name: Build Blazor WebAssembly
-        run: dotnet publish -c Release -o dist/wwwroot --nologo
+        run: dotnet publish -c Release -o dist --nologo
         working-directory: ${{ env.APP_LOCATION }}
 
       - name: Verify build output
