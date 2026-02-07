@@ -69,34 +69,45 @@ jobs:
 
       - name: Deploy via Direct API Call
         run: |
-          # Extract token and construct deployment URL
+          # Extract token
           API_TOKEN="${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}"
+          
           # Create zip archive of staging files
           cd staging
           zip -r ../deploy.zip . > /dev/null 2>&1
           cd ..
           
           # Get file size
-          FILESIZE=$(stat -f%z deploy.zip 2>/dev/null || stat --printf=%s deploy.zip)
-          echo "Uploading $((FILESIZE / 1024 / 1024))MB to Azure Static Web Apps..."
+          FILESIZE=$(stat --printf=%s deploy.zip)
+          FILEMB=$((FILESIZE / 1024 / 1024))
+          echo "Uploading ${FILEMB}MB to Azure Static Web Apps..."
           
-          # Upload to deployment endpoint
-          # Azure Static Web Apps accepts deployments via the deployment token endpoint
+          # Upload to Azure Static Web Apps deployment endpoint
+          # Endpoint format: https://api-token@hostname/api/deploy
+          echo "Deployment URL: https://***.azurestaticapps.net/api/deploy"
+          
           RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
             -H "Content-Type: application/zip" \
             --data-binary @deploy.zip \
-            "https://${API_TOKEN}@aiatc-web.azurestaticapps.com/api/github/deploy?repo=ivanlamont/AI-ATC&branch=main")
+            "https://${API_TOKEN}@aiatc-web.azurestaticapps.net/api/deploy")
           
-          # Extract status code (last line)
+          # Extract status code (last line) and body
           STATUS=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+          BODY=$(echo "$RESPONSE" | head -n -1)
           
           echo "Status Code: $STATUS"
-          echo "Response: $BODY"
+          if [ ! -z "$BODY" ]; then
+            echo "Response: $BODY"
+          fi
           
-          # Check if successful (202 Accepted or 200 OK)
-          if [[ "$STATUS" == "202" ]] || [[ "$STATUS" == "200" ]] || [[ "$STATUS" == "201" ]]; then
+          # Check if successful (201 Created or 202 Accepted)
+          if [[ "$STATUS" == "201" ]] || [[ "$STATUS" == "202" ]]; then
             echo "✓ Deployment initiated successfully"
+            exit 0
+          elif [[ "$STATUS" == "200" ]]; then
+            echo "✓ Deployment completed successfully"
+            exit 0
           else
             echo "✗ Deployment failed with status $STATUS"
             exit 1
