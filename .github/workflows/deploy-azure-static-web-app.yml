@@ -39,20 +39,20 @@ jobs:
           
           # Move built files to workspace root for deployment
           # This bypasses the action's auto-detection of src/AIATC.Web
-          cp -r dist/wwwroot/* .
+          cp -r dist/wwwroot/* ../..
           
-          # Add the staticwebapp.config.json
-          cp staticwebapp.config.json .
+          # Add the staticwebapp.config.json from workspace root
+          cp ../../staticwebapp.config.json ../..
           
-          # Verify index.html is at root
-          if [ ! -f "index.html" ]; then
+          # Verify index.html is at workspace root
+          if [ ! -f "../../index.html" ]; then
             echo "ERROR: index.html not found at workspace root"
-            ls -la
+            ls -la ../..
             exit 1
           fi
           
           echo "✓ Files ready at workspace root for deployment"
-          echo "File count: $(find . -maxdepth 1 -type f | wc -l)"
+          echo "File count: $(find ../.. -maxdepth 1 -type f -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.wasm" -o -name "*.json" | wc -l)"
         working-directory: ${{ env.APP_LOCATION }}
 
       - name: Deploy to Azure Static Web Apps
