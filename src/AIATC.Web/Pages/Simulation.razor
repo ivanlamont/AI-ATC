@@ -3,10 +3,13 @@
 @using AIATC.Domain.Models.Commands
 @using AIATC.Domain.Models.Navigation
 @using AIATC.Domain.Models.Scoring
+@using AIATC.Domain.Enums
 @using AIATC.Web.Components.Radar
 @using AIATC.Web.Components.Controls
 @using AIATC.Web.Components.Audio
+@using AIATC.Web.Services
 @inject IJSRuntime JS
+@inject TextToSpeechService TextToSpeech
 
 <PageTitle>AI ATC Simulation</PageTitle>
 
@@ -127,7 +130,7 @@
     private NavigationDatabase navigationDatabase = new();
 
     // Simulation control
-    private bool isPaused = true;
+    private bool isPaused = false;  // Start unpaused so aircraft move
     private float timeMultiplier = 1.0f;
     private System.Threading.Timer? simulationTimer;
 
@@ -275,6 +278,9 @@
             clearanceApplicator.ApplyCommand(entry.ParsedCommand, selectedAircraft);
             scoringService.RecordCommand(selectedAircraft.Callsign, entry.ParsedCommand);
 
+            // Generate pilot readback
+            await GeneratePilotReadback(selectedAircraft, entry.ParsedCommand);
+
             aircraftHappiness = scoringService.GetAllAircraftHappiness();
         }
 
@@ -296,12 +302,27 @@
                 clearanceApplicator.ApplyCommand(parsedCommand, selectedAircraft);
                 scoringService.RecordCommand(selectedAircraft.Callsign, parsedCommand);
 
-                aircraftHappiness = scoringService.GetAllAircraftHappiness();
+                // Generate pilot readback
+                await GeneratePilotReadback(selectedAircraft, parsedCommand);
 
-                // Provide audio feedback
-                await Task.CompletedTask; // VoiceCommandPanel handles TTS internally
+                aircraftHappiness = scoringService.GetAllAircraftHappiness();
             }
         }
+    }
+
+    private async Task GeneratePilotReadback(AircraftModel aircraft, AtcCommand command)
+    {
+        // Generate appropriate readback based on command type
+        string readback = command switch
+        {
+            HeadingCommand hc => $"Turn {(hc.Direction == TurnDirection.Left ? "left" : "right")} heading {hc.TargetHeading:000}",
+            AltitudeCommand ac => $"{(ac.TargetAltitude > aircraft.AltitudeFt ? "Climb and maintain" : "Descend and maintain")} {(int)(ac.TargetAltitude / 100) * 100}",
+            SpeedCommand sc => $"{(sc.TargetSpeed > aircraft.SpeedKnots ? "Increase" : "Reduce")} speed to {(int)sc.TargetSpeed} knots",
+            _ => "Roger"
+        };
+
+        // Add callsign and speak with pilot voice
+        await TextToSpeech.SpeakPilotReadbackAsync(aircraft.Callsign, readback);
     }
 
     public void Dispose()
