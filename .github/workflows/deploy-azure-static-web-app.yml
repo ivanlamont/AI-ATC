@@ -70,16 +70,45 @@ jobs:
           echo "✓ Files ready in staging directory"
           echo "Files count: $(find staging -type f | wc -l)"
 
-      - name: Deploy via Azure Static Web Apps Action
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "staging"
-          api_location: ""
-          output_location: ""
-          skip_app_build: true
+      - name: Deploy to Azure Static Web Apps
+        run: |
+          # Extract API token from secret
+          API_TOKEN="${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}"
+          
+          # Create zip of staging directory
+          cd staging
+          zip -r -q ../app.zip .
+          cd ..
+          
+          # Get file size
+          SIZE=$(stat --printf=%s app.zip)
+          SIZEMB=$((SIZE / 1024 / 1024))
+          echo "Uploading ${SIZEMB}MB..."
+          
+          # The API token format is: <deployment-token>
+          # Upload via the authenticated endpoint
+          # Azure Static Web Apps deployment token endpoint
+          DEPLOY_URL="https://${API_TOKEN}@aiatc-web.azurestaticapps.net/api/github/deploy"
+          
+          HTTP_CODE=$(curl -s -o response.html -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/zip" \
+            --data-binary @app.zip \
+            "$DEPLOY_URL")
+          
+          echo "HTTP Status Code: $HTTP_CODE"
+          
+          if [ -f response.html ]; then
+            cat response.html
+          fi
+          
+          # Accept 200, 201, or 202 as success
+          if [[ "$HTTP_CODE" =~ ^20[0-2]$ ]]; then
+            echo "✓ Deployment successful"
+          else
+            echo "✗ Deployment failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
