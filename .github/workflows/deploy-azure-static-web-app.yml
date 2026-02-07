@@ -32,83 +32,39 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore dependencies
-        run: dotnet restore
-        working-directory: ${{ env.APP_LOCATION }}
-
-      - name: Build Blazor WebAssembly
-        run: dotnet publish -c Release -o dist --nologo
-        working-directory: ${{ env.APP_LOCATION }}
-
-      - name: Verify build output
-        run: |
-          echo "Checking build output..."
-          ls -la ${{ env.BUILD_OUTPUT }}/
-          if [ -f "${{ env.BUILD_OUTPUT }}/index.html" ]; then
-            echo "✓ index.html found"
-          else
-            echo "✗ index.html NOT found"
-            exit 1
-          fi
-
       - name: Prepare files for deployment
         run: |
-          # Copy wwwroot files to staging directory at workspace root
-          mkdir -p staging
-          cp -r ${{ env.BUILD_OUTPUT }}/* staging/
+          # Build the app first
+          dotnet publish -c Release -o dist --nologo
           
-          # Copy staticwebapp.config.json to staging
-          cp staticwebapp.config.json staging/
+          # Move built files to workspace root for deployment
+          # This bypasses the action's auto-detection of src/AIATC.Web
+          cp -r dist/wwwroot/* .
           
-          # Verify index.html exists
-          if [ ! -f "staging/index.html" ]; then
-            echo "ERROR: index.html not found in staging directory"
-            ls -la staging/
+          # Add the staticwebapp.config.json
+          cp staticwebapp.config.json .
+          
+          # Verify index.html is at root
+          if [ ! -f "index.html" ]; then
+            echo "ERROR: index.html not found at workspace root"
+            ls -la
             exit 1
           fi
           
-          echo "✓ Files ready in staging directory"
-          echo "Files count: $(find staging -type f | wc -l)"
+          echo "✓ Files ready at workspace root for deployment"
+          echo "File count: $(find . -maxdepth 1 -type f | wc -l)"
+        working-directory: ${{ env.APP_LOCATION }}
 
       - name: Deploy to Azure Static Web Apps
-        run: |
-          # Extract API token from secret
-          API_TOKEN="${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}"
-          
-          # Create zip of staging directory
-          cd staging
-          zip -r -q ../app.zip .
-          cd ..
-          
-          # Get file size
-          SIZE=$(stat --printf=%s app.zip)
-          SIZEMB=$((SIZE / 1024 / 1024))
-          echo "Uploading ${SIZEMB}MB..."
-          
-          # The API token format is: <deployment-token>
-          # Upload via the authenticated endpoint
-          # Azure Static Web Apps deployment token endpoint
-          DEPLOY_URL="https://${API_TOKEN}@aiatc-web.azurestaticapps.net/api/github/deploy"
-          
-          HTTP_CODE=$(curl -s -o response.html -w "%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/zip" \
-            --data-binary @app.zip \
-            "$DEPLOY_URL")
-          
-          echo "HTTP Status Code: $HTTP_CODE"
-          
-          if [ -f response.html ]; then
-            cat response.html
-          fi
-          
-          # Accept 200, 201, or 202 as success
-          if [[ "$HTTP_CODE" =~ ^20[0-2]$ ]]; then
-            echo "✓ Deployment successful"
-          else
-            echo "✗ Deployment failed with HTTP $HTTP_CODE"
-            exit 1
-          fi
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "/"
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
