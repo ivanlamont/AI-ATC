@@ -1,0 +1,472 @@
+@page "/communication"
+@using AIATC.Web.Services
+@using AIATC.Domain.Models
+@inject IAzureSpeechService SpeechService
+@inject IAzureConfigurationService ConfigService
+@inject IJSRuntime JSRuntime
+@inject ILogger<ATCCommunicationHub> Logger
+@implements IDisposable
+
+<div class="atc-communication-container">
+    <div class="communication-header">
+        <h3>ATC Communication Hub</h3>
+        <div class="service-status">
+            <span class="status-indicator @(isAzureAvailable ? "status-azure" : "status-fallback")"></span>
+            <span>@(isAzureAvailable ? "Azure Speech Services" : "Web Speech API")</span>
+        </div>
+    </div>
+
+    <div class="communication-panels">
+        <!-- Speech Recognition Panel -->
+        <div class="panel recognition-panel">
+            <div class="panel-header">
+                <h4>Speech Recognition</h4>
+                <div class="controls">
+                    <button class="btn btn-primary" @onclick="ToggleRecognition" disabled="@(!canUseRecognition)">
+                        @(isListening ? "Stop Listening" : "Start Listening")
+                    </button>
+                    <button class="btn btn-secondary" @onclick="TestMicrophone">Test Mic</button>
+                </div>
+            </div>
+            
+            <div class="recognition-display">
+                @if (isListening)
+                {
+                    <div class="listening-indicator">
+                        <div class="pulse-animation"></div>
+                        <span>Listening for ATC commands...</span>
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(lastRecognizedText))
+                {
+                    <div class="recognition-result">
+                        <div class="result-header">
+                            <strong>Recognized:</strong>
+                            <span class="confidence">Confidence: @($"{lastConfidence:P0}")</span>
+                        </div>
+                        <div class="result-text">@lastRecognizedText</div>
+                        @if (lastAviationCommand != null)
+                        {
+                            <div class="aviation-command">
+                                <span class="command-type">Command Type: @lastAviationCommand.Type</span>
+                                <span class="command-confidence">(@($"{lastAviationCommand.Confidence:P0}"))</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Text-to-Speech Panel -->
+        <div class="panel synthesis-panel">
+            <div class="panel-header">
+                <h4>Text-to-Speech</h4>
+                <div class="voice-selector">
+                    <label>Voice Profile:</label>
+                    <select @bind="selectedVoiceProfile" class="form-select">
+                        <option value="@ATCVoiceProfile.ControllerMale">Controller (Male)</option>
+                        <option value="@ATCVoiceProfile.ControllerFemale">Controller (Female)</option>
+                        <option value="@ATCVoiceProfile.PilotMale">Pilot (Male)</option>
+                        <option value="@ATCVoiceProfile.PilotFemale">Pilot (Female)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="synthesis-controls">
+                <textarea @bind="textToSpeak" placeholder="Enter ATC communication..." 
+                         class="form-control speech-input" rows="3"></textarea>
+                
+                <div class="quick-phrases">
+                    <h5>Quick ATC Phrases:</h5>
+                    <div class="phrase-buttons">
+                        @foreach (var phrase in commonPhrases)
+                        {
+                            <button class="btn btn-outline-secondary btn-sm" 
+                                    @onclick="() => SpeakPhrase(phrase)">@phrase</button>
+                        }
+                    </div>
+                </div>
+                
+                <div class="synthesis-actions">
+                    <button class="btn btn-success" @onclick="SpeakText" disabled="@(string.IsNullOrEmpty(textToSpeak))">
+                        Speak
+                    </button>
+                    <button class="btn btn-warning" @onclick="StopSpeaking">
+                        Stop
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Communication Log -->
+    <div class="communication-log">
+        <h4>Communication Log</h4>
+        <div class="log-entries">
+            @foreach (var entry in communicationLog.TakeLast(10).Reverse())
+            {
+                <div class="log-entry @entry.Type.ToString().ToLower()">
+                    <span class="timestamp">@entry.Timestamp.ToString("HH:mm:ss")</span>
+                    <span class="source">@entry.Source</span>
+                    <span class="message">@entry.Message</span>
+                    @if (entry.Confidence.HasValue)
+                    {
+                        <span class="confidence">(@($"{entry.Confidence.Value:P0}"))</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Configuration Panel (Toggle) -->
+    @if (showConfiguration)
+    {
+        <div class="configuration-panel">
+            <div class="panel-header">
+                <h4>Azure Configuration</h4>
+                <button class="btn btn-sm btn-secondary" @onclick="() => showConfiguration = false">Close</button>
+            </div>
+            
+            <div class="config-form">
+                <div class="form-group">
+                    <label>Azure Speech Subscription Key:</label>
+                    <input type="password" @bind="tempConfig.SpeechSubscriptionKey" class="form-control" 
+                           placeholder="Enter your Azure Speech key..." />
+                </div>
+                
+                <div class="form-group">
+                    <label>Azure Region:</label>
+                    <select @bind="tempConfig.SpeechRegion" class="form-select">
+                        @foreach (var region in availableRegions)
+                        {
+                            <option value="@region.Code">@region</option>
+                        }
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" @bind="tempConfig.UseAviationPhoneology" />
+                        Use Aviation Phoneology
+                    </label>
+                </div>
+                
+                <div class="config-actions">
+                    <button class="btn btn-primary" @onclick="SaveConfiguration">Save Configuration</button>
+                    <button class="btn btn-secondary" @onclick="TestConfiguration">Test Connection</button>
+                </div>
+            </div>
+        </div>
+    }
+    
+    <div class="configuration-toggle">
+        <button class="btn btn-link" @onclick="() => showConfiguration = !showConfiguration">
+            ⚙️ Azure Configuration
+        </button>
+    </div>
+</div>
+
+@code {
+    private bool isListening = false;
+    private bool isAzureAvailable = false;
+    private bool canUseRecognition = true;
+    private bool showConfiguration = false;
+    
+    private string lastRecognizedText = string.Empty;
+    private float lastConfidence = 0f;
+    private AviationCommand? lastAviationCommand;
+    
+    private string textToSpeak = string.Empty;
+    private ATCVoiceProfile selectedVoiceProfile = ATCVoiceProfile.ControllerMale;
+    
+    private AzureConfiguration currentConfig = new();
+    private AzureConfiguration tempConfig = new();
+    private List<AzureRegion> availableRegions = new();
+    
+    private List<CommunicationLogEntry> communicationLog = new();
+    
+    private readonly string[] commonPhrases = new[]
+    {
+        "Roger",
+        "Wilco",
+        "Turn left heading two seven zero",
+        "Climb and maintain flight level three five zero",
+        "Descend and maintain three thousand",
+        "Contact approach on one one eight point one",
+        "Cleared for takeoff runway two seven",
+        "Continue approach",
+        "Go around",
+        "Traffic twelve o'clock five miles"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load configuration and initialize services
+        currentConfig = await ConfigService.LoadConfigurationAsync();
+        tempConfig = new AzureConfiguration
+        {
+            SpeechSubscriptionKey = currentConfig.SpeechSubscriptionKey,
+            SpeechRegion = currentConfig.SpeechRegion,
+            UseAviationPhoneology = currentConfig.UseAviationPhoneology
+        };
+        
+        availableRegions = ConfigService.GetAvailableRegions().ToList();
+        
+        // Initialize Azure Speech Service
+        isAzureAvailable = await SpeechService.InitializeAsync();
+        canUseRecognition = currentConfig.CanUseSpeechRecognition || !currentConfig.IsValid; // Allow fallback
+        
+        // Wire up event handlers
+        SpeechService.SpeechRecognized += OnSpeechRecognized;
+        SpeechService.RecognitionUncertain += OnRecognitionUncertain;
+        
+        LogCommunication(CommunicationLogType.System, "System", 
+            isAzureAvailable ? "Azure Speech Services initialized" : "Using Web Speech API fallback");
+    }
+
+    private async Task ToggleRecognition()
+    {
+        try
+        {
+            if (isListening)
+            {
+                await SpeechService.StopContinuousRecognitionAsync();
+                isListening = false;
+                LogCommunication(CommunicationLogType.System, "System", "Stopped listening");
+            }
+            else
+            {
+                var success = await SpeechService.StartContinuousRecognitionAsync();
+                if (success)
+                {
+                    isListening = true;
+                    LogCommunication(CommunicationLogType.System, "System", "Started listening for ATC commands");
+                }
+                else
+                {
+                    LogCommunication(CommunicationLogType.Error, "System", "Failed to start speech recognition");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error toggling recognition");
+            LogCommunication(CommunicationLogType.Error, "System", $"Recognition error: {ex.Message}");
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task SpeakText()
+    {
+        if (string.IsNullOrEmpty(textToSpeak))
+            return;
+
+        try
+        {
+            LogCommunication(CommunicationLogType.Outbound, selectedVoiceProfile.ToString(), textToSpeak);
+            
+            var audioData = await SpeechService.SynthesizeSpeechAsync(textToSpeak, selectedVoiceProfile);
+            
+            if (audioData.Length > 0)
+            {
+                // Play audio data using Azure TTS
+                await PlayAudioData(audioData);
+            }
+            // If no audio data, it means fallback TTS was used (already spoken)
+            
+            textToSpeak = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error during text-to-speech");
+            LogCommunication(CommunicationLogType.Error, "System", $"TTS error: {ex.Message}");
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task SpeakPhrase(string phrase)
+    {
+        textToSpeak = phrase;
+        await SpeakText();
+    }
+
+    private async Task StopSpeaking()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("stopAudio");
+            LogCommunication(CommunicationLogType.System, "System", "Stopped speaking");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error stopping speech");
+        }
+    }
+
+    private async Task TestMicrophone()
+    {
+        try
+        {
+            var hasPermission = await JSRuntime.InvokeAsync<bool>("checkMicrophonePermission");
+            if (hasPermission)
+            {
+                LogCommunication(CommunicationLogType.System, "System", "Microphone test successful");
+            }
+            else
+            {
+                LogCommunication(CommunicationLogType.Error, "System", "Microphone permission required");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error testing microphone");
+            LogCommunication(CommunicationLogType.Error, "System", $"Microphone test failed: {ex.Message}");
+        }
+    }
+
+    private async Task SaveConfiguration()
+    {
+        try
+        {
+            currentConfig.SpeechSubscriptionKey = tempConfig.SpeechSubscriptionKey;
+            currentConfig.SpeechRegion = tempConfig.SpeechRegion;
+            currentConfig.UseAviationPhoneology = tempConfig.UseAviationPhoneology;
+            
+            await ConfigService.SaveConfigurationAsync(currentConfig);
+            
+            // Reinitialize services with new configuration
+            isAzureAvailable = await SpeechService.InitializeAsync(currentConfig.SpeechSubscriptionKey, currentConfig.SpeechRegion);
+            
+            LogCommunication(CommunicationLogType.System, "System", "Configuration saved and services reinitialized");
+            showConfiguration = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving configuration");
+            LogCommunication(CommunicationLogType.Error, "System", $"Configuration error: {ex.Message}");
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task TestConfiguration()
+    {
+        try
+        {
+            var httpClient = new HttpClient();
+            var jsRuntime = JSRuntime;
+            
+            var testRecognition = new SpeechRecognitionService(jsRuntime);
+            var testTTS = new TextToSpeechService(jsRuntime);
+            
+            // Create a compatible logger
+            var loggerFactory = new LoggerFactory();
+            var azureLogger = loggerFactory.CreateLogger<AzureSpeechService>();
+            
+            var testService = new AzureSpeechService(
+                httpClient, 
+                azureLogger, 
+                testRecognition, 
+                testTTS);
+                
+            var success = await testService.InitializeAsync(tempConfig.SpeechSubscriptionKey, tempConfig.SpeechRegion);
+            
+            LogCommunication(CommunicationLogType.System, "System", 
+                success ? "Azure connection test successful" : "Azure connection test failed");
+                
+            // Dispose the temporary logger factory
+            loggerFactory.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error testing configuration");
+            LogCommunication(CommunicationLogType.Error, "System", $"Test failed: {ex.Message}");
+        }
+    }
+
+    private async Task PlayAudioData(byte[] audioData)
+    {
+        try
+        {
+            // Convert audio data to base64 for JavaScript
+            var base64Audio = Convert.ToBase64String(audioData);
+            await JSRuntime.InvokeVoidAsync("playAudioData", base64Audio, "audio/mp3");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error playing audio data");
+        }
+    }
+
+    private void OnSpeechRecognized(object? sender, SpeechRecognitionResult result)
+    {
+        InvokeAsync(() =>
+        {
+            lastRecognizedText = result.Text;
+            lastConfidence = result.Confidence;
+            lastAviationCommand = result.AviationCommand;
+            
+            LogCommunication(CommunicationLogType.Inbound, "Speech Input", result.Text, result.Confidence);
+            StateHasChanged();
+        });
+    }
+
+    private void OnRecognitionUncertain(object? sender, string text)
+    {
+        InvokeAsync(() =>
+        {
+            LogCommunication(CommunicationLogType.Warning, "Speech Input", $"Uncertain: {text}");
+            StateHasChanged();
+        });
+    }
+
+    private void LogCommunication(CommunicationLogType type, string source, string message, float? confidence = null)
+    {
+        communicationLog.Add(new CommunicationLogEntry
+        {
+            Type = type,
+            Source = source,
+            Message = message,
+            Confidence = confidence,
+            Timestamp = DateTime.Now
+        });
+
+        // Keep only last 50 entries
+        if (communicationLog.Count > 50)
+        {
+            communicationLog.RemoveAt(0);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (SpeechService != null)
+        {
+            SpeechService.SpeechRecognized -= OnSpeechRecognized;
+            SpeechService.RecognitionUncertain -= OnRecognitionUncertain;
+        }
+    }
+
+    private class CommunicationLogEntry
+    {
+        public CommunicationLogType Type { get; set; }
+        public string Source { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public float? Confidence { get; set; }
+        public DateTime Timestamp { get; set; }
+    }
+
+    private enum CommunicationLogType
+    {
+        Inbound,
+        Outbound,
+        System,
+        Warning,
+        Error
+    }
+}
+
+<link href="css/communication.css" rel="stylesheet" />

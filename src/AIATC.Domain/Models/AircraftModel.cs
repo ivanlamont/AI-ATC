@@ -1,4 +1,5 @@
 using System;
+using AIATC.Domain.Models.Aviation;
 
 namespace AIATC.Domain.Models;
 
@@ -45,6 +46,21 @@ public class AircraftModel
     public float PreviousDistanceToDestinationNm { get; set; }
     public float DistanceToFafNm { get; set; }
 
+    // Enhanced Aviation Properties
+    public string IcaoTypeCode { get; set; } = "B738"; // Should match AircraftType
+    public AircraftType? AircraftTypeInfo { get; set; }
+    public DynamicFlightState FlightState { get; set; } = new DynamicFlightState();
+    public FlightPlan? AssignedFlightPlan { get; set; }
+    public AircraftMode CurrentMode { get; set; } = AircraftMode.Enroute;
+    
+    // Enhanced ATC Fields
+    public int AssignedSquawk { get; set; }
+    public string AssignedRunway { get; set; } = string.Empty;
+    public string AssignedApproach { get; set; } = string.Empty;
+    
+    // Route Clearance System
+    public RouteClearance? RouteClearance { get; set; }
+    
     // Wind (external)
     private Wind? _currentWind;
 

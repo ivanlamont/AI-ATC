@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using AIATC.Web;
 using AIATC.Web.Services;
 using AIATC.Domain.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -17,5 +18,12 @@ builder.Services.AddScoped<ChallengeModeService>();
 // Register web services
 builder.Services.AddScoped<SpeechRecognitionService>();
 builder.Services.AddScoped<TextToSpeechService>();
+
+// Register Azure services
+builder.Services.AddScoped<IAzureConfigurationService, AzureConfigurationService>();
+builder.Services.AddScoped<IAzureSpeechService, AzureSpeechService>();
+
+// Register navigation service
+builder.Services.AddScoped<INavigationService, NavigationService>();
 
 await builder.Build().RunAsync();

@@ -14,7 +14,6 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   APP_LOCATION: "src/AIATC.Web"
-  BUILD_OUTPUT: "src/AIATC.Web/dist/wwwroot"
 
 jobs:
   build_and_deploy_job:
@@ -32,58 +31,36 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Prepare files for deployment
+      - name: Build and publish application
         run: |
-          # Build the app first
-          dotnet publish -c Release -o dist --nologo
+          # Build the Blazor WebAssembly app
+          dotnet publish -c Release -o publish/web --nologo
           
-          # Copy built files to a deploy directory
-          mkdir -p deploy
-          cp -r dist/wwwroot/* deploy/
-          cp ../../staticwebapp.config.json deploy/
+          # Copy static web app configuration
+          cp staticwebapp.config.json publish/web/wwwroot/
           
           # Verify index.html exists
-          if [ ! -f "deploy/index.html" ]; then
-            echo "ERROR: index.html not found in deploy directory"
-            ls -la deploy/
+          if [ ! -f "publish/web/wwwroot/index.html" ]; then
+            echo "ERROR: index.html not found in publish directory"
+            ls -la publish/web/wwwroot/
             exit 1
           fi
           
-          echo "✓ Files ready in deploy directory"
-          ls -la deploy/ | head -10
-        working-directory: ${{ env.APP_LOCATION }}
+          echo "✓ Application built successfully"
+          echo "Files in wwwroot:"
+          ls -la publish/web/wwwroot/ | head -10
+        working-directory: ${{ env.APP_LOCATION }}/../../
 
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Deploy to Azure Static Web Apps using Azure CLI
+      - name: Deploy to Azure Static Web Apps
         run: |
-          # Create zip of deploy directory
-          cd src/AIATC.Web/deploy
-          zip -r ../../../app-deploy.zip . -q
-          cd ../../..
+          # Install SWA CLI
+          npm install -g @azure/static-web-apps-cli
           
-          # Get deployment URL
-          DEPLOY_URL=$(az staticwebapp secrets list \
-            --name aiatc-web \
-            --resource-group aiatc-rg \
-            --query "properties.apiKey" \
-            --output tsv)
-          
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "ERROR: Could not retrieve deployment token"
-            exit 1
-          fi
-          
-          echo "Uploading to Azure Static Web Apps production environment..."
-          
-          # Use SWA CLI for deployment to production environment
+          # Deploy using the deployment token
           npx @azure/static-web-apps-cli deploy \
-            --deployment-token "$DEPLOY_URL" \
-            --app-location "./src/AIATC.Web/deploy" \
-            --env "default" \
+            --deployment-token "${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}" \
+            --app-location "./publish/web/wwwroot" \
+            --env "production" \
             --verbose
 
   close_pull_request_job:

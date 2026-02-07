@@ -1,6 +1,9 @@
 @using AIATC.Domain.Models
 @using AIATC.Domain.Models.Navigation
+@using AIATC.Domain.Models.Aviation
+@using AIATC.Web.Services
 @inject IJSRuntime JS
+@inject INavigationService NavigationService
 
 <div class="radar-container" @ref="radarContainer">
     <canvas @ref="radarCanvas"
@@ -55,6 +58,15 @@
 
     [Parameter]
     public AirportModel? Airport { get; set; }
+
+    [Parameter]
+    public List<Runway> Runways { get; set; } = new();
+
+    [Parameter]
+    public double CenterLatitude { get; set; } = 33.4255; // Default to Atlanta area
+
+    [Parameter]
+    public double CenterLongitude { get; set; } = -84.4693;
 
     [Parameter]
     public float RangeNm { get; set; } = 50.0f;
@@ -182,10 +194,10 @@
         // Draw airport symbol (square)
         await JS.InvokeVoidAsync("radarDisplay.drawRect",
             radarCanvas,
-            screenX - 4,
-            screenY - 4,
-            8,
-            8,
+            screenX - 5,
+            screenY - 5,
+            10,
+            10,
             "#ffaa00");
 
         // Draw airport label
@@ -196,6 +208,9 @@
             screenY + 4,
             "#ffcc00",
             "bold 12px monospace");
+
+        // Draw runways
+        await DrawRunways(centerX, centerY);
     }
 
     private async Task DrawAircraft(AircraftModel aircraft, float centerX, float centerY)
@@ -336,7 +351,72 @@
 
         await DrawRadar();
     }
+    private async Task DrawRunways(float centerX, float centerY)
+    {
+        if (!Runways.Any()) return;
 
+        foreach (var runway in Runways)
+        {
+            await DrawRunway(runway, centerX, centerY);
+        }
+    }
+
+    private async Task DrawRunway(Runway runway, float centerX, float centerY)
+    {
+        // Get runway endpoints from the model
+        var (startPos, endPos) = NavigationService.CalculateRunwayEndpoints(runway);
+        
+        // Convert to screen coordinates using existing NmToScreen method
+        var (startX, startY) = NmToScreen(startPos, centerX, centerY);
+        var (endX, endY) = NmToScreen(endPos, centerX, centerY);
+
+        // Draw runway centerline
+        await JS.InvokeVoidAsync("radarDisplay.drawLine",
+            radarCanvas,
+            startX, startY, endX, endY,
+            "#ffffff", 3);
+
+        // Draw runway outline (slightly wider)
+        var runwayWidthNm = runway.WidthFt * 0.000164579f; // Convert feet to nautical miles
+        var pixelsPerNm = Math.Min(CanvasWidth, CanvasHeight) / (2.0f * RangeNm) * zoomLevel;
+        var runwayWidthPx = runwayWidthNm * pixelsPerNm;
+
+        // Calculate perpendicular vector for runway width
+        var runwayVectorX = endX - startX;
+        var runwayVectorY = endY - startY;
+        var runwayLength = (float)Math.Sqrt(runwayVectorX * runwayVectorX + runwayVectorY * runwayVectorY);
+        
+        if (runwayLength > 0)
+        {
+            var normalizedX = runwayVectorX / runwayLength;
+            var normalizedY = runwayVectorY / runwayLength;
+            var perpX = -normalizedY * (runwayWidthPx / 2);
+            var perpY = normalizedX * (runwayWidthPx / 2);
+
+            // Draw runway edges
+            await JS.InvokeVoidAsync("radarDisplay.drawLine",
+                radarCanvas,
+                startX + perpX, startY + perpY,
+                endX + perpX, endY + perpY,
+                "#bbbbbb", 1);
+
+            await JS.InvokeVoidAsync("radarDisplay.drawLine",
+                radarCanvas,
+                startX - perpX, startY - perpY,
+                endX - perpX, endY - perpY,
+                "#bbbbbb", 1);
+        }
+
+        // Draw runway identifier
+        var midX = (startX + endX) / 2;
+        var midY = (startY + endY) / 2;
+        
+        await JS.InvokeVoidAsync("radarDisplay.drawText",
+            radarCanvas,
+            runway.Identifier,
+            midX + 5, midY - 5,
+            "#ffffff", "10px monospace");
+    }
     private async Task OnMouseMove(MouseEventArgs e)
     {
         if (isPanning)
