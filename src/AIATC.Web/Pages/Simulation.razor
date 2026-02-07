@@ -314,9 +314,9 @@
         // Generate appropriate readback based on command type
         string readback = command switch
         {
-            HeadingCommand hc => $"Turn {(hc.Direction == TurnDirection.Left ? "left" : "right")} heading {hc.TargetHeading:000}",
-            AltitudeCommand ac => $"{(ac.TargetAltitude > aircraft.AltitudeFt ? "Climb and maintain" : "Descend and maintain")} {(int)(ac.TargetAltitude / 100) * 100}",
-            SpeedCommand sc => $"{(sc.TargetSpeed > aircraft.SpeedKnots ? "Increase" : "Reduce")} speed to {(int)sc.TargetSpeed} knots",
+            HeadingCommand hc => $"Turn {(hc.Direction == TurnDirection.Left ? "left" : "right")} heading {hc.TargetHeadingDegrees:000}",
+            AltitudeCommand ac => $"{(ac.TargetAltitudeFeet > aircraft.AltitudeFt ? "Climb and maintain" : "Descend and maintain")} {(int)(ac.TargetAltitudeFeet / 100) * 100}",
+            SpeedCommand sc => $"{(sc.TargetSpeedKnots > aircraft.SpeedKnots ? "Increase" : "Reduce")} speed to {(int)sc.TargetSpeedKnots} knots",
             _ => "Roger"
         };
 
