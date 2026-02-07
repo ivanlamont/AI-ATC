@@ -53,9 +53,12 @@ jobs:
 
       - name: Prepare files for deployment
         run: |
-          # Copy wwwroot files to staging directory
+          # Copy wwwroot files to staging directory at workspace root
           mkdir -p staging
           cp -r ${{ env.BUILD_OUTPUT }}/* staging/
+          
+          # Copy staticwebapp.config.json to staging
+          cp staticwebapp.config.json staging/
           
           # Verify index.html exists
           if [ ! -f "staging/index.html" ]; then
@@ -64,54 +67,19 @@ jobs:
             exit 1
           fi
           
-          echo "✓ Files ready in staging directory:"
-          ls -la staging/ | head -20
+          echo "✓ Files ready in staging directory"
+          echo "Files count: $(find staging -type f | wc -l)"
 
-      - name: Deploy via Direct API Call
-        run: |
-          # Extract token
-          API_TOKEN="${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}"
-          
-          # Create zip archive of staging files
-          cd staging
-          zip -r ../deploy.zip . > /dev/null 2>&1
-          cd ..
-          
-          # Get file size
-          FILESIZE=$(stat --printf=%s deploy.zip)
-          FILEMB=$((FILESIZE / 1024 / 1024))
-          echo "Uploading ${FILEMB}MB to Azure Static Web Apps..."
-          
-          # Upload to Azure Static Web Apps deployment endpoint
-          # Endpoint format: https://api-token@hostname/api/deploy
-          echo "Deployment URL: https://***.azurestaticapps.net/api/deploy"
-          
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/zip" \
-            --data-binary @deploy.zip \
-            "https://${API_TOKEN}@aiatc-web.azurestaticapps.net/api/deploy")
-          
-          # Extract status code (last line) and body
-          STATUS=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          
-          echo "Status Code: $STATUS"
-          if [ ! -z "$BODY" ]; then
-            echo "Response: $BODY"
-          fi
-          
-          # Check if successful (201 Created or 202 Accepted)
-          if [[ "$STATUS" == "201" ]] || [[ "$STATUS" == "202" ]]; then
-            echo "✓ Deployment initiated successfully"
-            exit 0
-          elif [[ "$STATUS" == "200" ]]; then
-            echo "✓ Deployment completed successfully"
-            exit 0
-          else
-            echo "✗ Deployment failed with status $STATUS"
-            exit 1
-          fi
+      - name: Deploy via Azure Static Web Apps Action
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "staging"
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
