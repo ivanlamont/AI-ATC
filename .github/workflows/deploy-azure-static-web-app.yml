@@ -77,12 +77,13 @@ jobs:
             exit 1
           fi
           
-          echo "Uploading to Azure Static Web Apps..."
+          echo "Uploading to Azure Static Web Apps production environment..."
           
-          # Use SWA CLI for deployment (more reliable than direct curl)
+          # Use SWA CLI for deployment to production environment
           npx @azure/static-web-apps-cli deploy \
             --deployment-token "$DEPLOY_URL" \
             --app-location "./src/AIATC.Web/deploy" \
+            --env "default" \
             --verbose
 
   close_pull_request_job:
