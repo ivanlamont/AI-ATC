@@ -71,9 +71,9 @@ namespace AIATC.ML.Services
                 {
                     _logger.LogInformation($"Loading model from {modelPath}");
 
-                    // Dispose existing session and graph
+                    // Dispose existing session
                     _session?.Dispose();
-                    _graph?.Dispose();
+                    _graph = null;
 
                     // Create new graph
                     _graph = new Graph().as_default();
@@ -123,10 +123,9 @@ namespace AIATC.ML.Services
                 var input = PreprocessObservation(observation);
 
                 // Run inference
-                var output = _session.run(
-                    new[] { "model_output" },
-                    new[] { new NDArray(input) }
-                );
+                var feeds = new Dictionary<string, object> { { "model_input", new NDArray(input) } };
+                var fetches = new[] { "model_output" };
+                var output = _session.run(fetches, feeds);
 
                 // Postprocess output
                 var action = PostprocessOutput(output[0], observation);
@@ -224,12 +223,13 @@ namespace AIATC.ML.Services
             var outputArray = output.Data<float>();
 
             // Get action deltas
-            float headingDelta = (outputArray[0] - 0.5f) * 60; // -30 to +30 degrees
-            float altitudeDelta = (outputArray[1] - 0.5f) * 2000; // -1000 to +1000 ft
-            float speedDelta = (outputArray[2] - 0.5f) * 100; // -50 to +50 kts
+            var outputData = outputTensor.ToArray<float>();
+            float headingDelta = (outputData[0] - 0.5f) * 60; // -30 to +30 degrees
+            float altitudeDelta = (outputData[1] - 0.5f) * 2000; // -1000 to +1000 ft
+            float speedDelta = (outputData[2] - 0.5f) * 100; // -50 to +50 kts
 
             // Find action index (for logging/analysis)
-            int actionIdx = Array.IndexOf(outputArray, outputArray.Max());
+            int actionIdx = Array.IndexOf(outputData, outputData.Max());
 
             // Calculate new values with constraints
             float newHeading = (obs.AircraftHeadingDeg + headingDelta) % 360;
@@ -355,7 +355,7 @@ namespace AIATC.ML.Services
             try
             {
                 _session?.Dispose();
-                _graph?.Dispose();
+                _graph = null; // Graph doesn't implement IDisposable in newer versions
                 IsModelLoaded = false;
                 _disposed = true;
             }

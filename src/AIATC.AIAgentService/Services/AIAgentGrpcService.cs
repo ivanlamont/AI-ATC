@@ -48,16 +48,24 @@ namespace AIATC.ML.Services
         {
             try
             {
-                _server = new Server
+                var serviceDefinition = GetServiceDefinition();
+                if (serviceDefinition != null)
                 {
-                    Services = { GetServiceDefinition() },
-                    Ports = { new ServerPort("localhost", _port, ServerCredentials.Insecure) }
-                };
+                    _server = new Server
+                    {
+                        Services = { serviceDefinition },
+                        Ports = { new ServerPort("localhost", _port, ServerCredentials.Insecure) }
+                    };
 
-                await _server.StartAsync();
-                IsRunning = true;
+                    _server.Start();
+                    IsRunning = true;
 
-                _logger.LogInformation($"AI Agent gRPC service started on port {_port}");
+                    _logger.LogInformation($"AI Agent gRPC service started on port {_port}");
+                }
+                else
+                {
+                    _logger.LogWarning("Service definition is null, server not started");
+                }
             }
             catch (Exception ex)
             {
@@ -259,7 +267,7 @@ namespace AIATC.ML.Services
             try
             {
                 var channel = new Channel($"{_host}:{_port}", ChannelCredentials.Insecure);
-                await channel.ConnectAsync(timeout: TimeSpan.FromSeconds(5));
+                await channel.ConnectAsync(DateTime.UtcNow.AddSeconds(5));
 
                 _logger.LogDebug($"Connected to AI Agent service at {_host}:{_port}");
 
@@ -284,7 +292,7 @@ namespace AIATC.ML.Services
             try
             {
                 var channel = new Channel($"{_host}:{_port}", ChannelCredentials.Insecure);
-                await channel.ConnectAsync(timeout: TimeSpan.FromSeconds(2));
+                await channel.ConnectAsync(DateTime.UtcNow.AddSeconds(2));
                 await channel.ShutdownAsync();
                 return true;
             }
