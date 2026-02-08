@@ -34,9 +34,9 @@ jobs:
       - name: Build and publish application
         run: |
           # Build the Blazor WebAssembly app
-          dotnet publish -c Release -o publish/web --nologo
+          dotnet publish src/AIATC.Web -c Release -o publish/web --nologo
           
-          # Copy static web app configuration
+          # Copy static web app configuration from root to ensure it's present
           cp staticwebapp.config.json publish/web/wwwroot/
           
           # Verify index.html exists
@@ -46,10 +46,21 @@ jobs:
             exit 1
           fi
           
+          # Verify staticwebapp.config.json exists
+          if [ ! -f "publish/web/wwwroot/staticwebapp.config.json" ]; then
+            echo "ERROR: staticwebapp.config.json not found in publish directory"
+            exit 1
+          else
+            echo "✓ staticwebapp.config.json found"
+          fi
+          
+          # Remove any web.config files that might interfere with Azure Static Web Apps
+          rm -f publish/web/wwwroot/web.config
+          
           echo "✓ Application built successfully"
           echo "Files in wwwroot:"
-          ls -la publish/web/wwwroot/ | head -10
-        working-directory: ${{ env.APP_LOCATION }}/../../
+          ls -la publish/web/wwwroot/ | head -15
+        working-directory: ./
 
       - name: Deploy to Azure Static Web Apps
         run: |
