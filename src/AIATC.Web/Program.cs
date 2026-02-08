@@ -18,6 +18,7 @@ builder.Services.AddScoped<ChallengeModeService>();
 // Register web services
 builder.Services.AddScoped<SpeechRecognitionService>();
 builder.Services.AddScoped<TextToSpeechService>();
+builder.Services.AddScoped<AviationVocabularyService>();
 
 // Register Azure services
 builder.Services.AddScoped<IAzureConfigurationService, AzureConfigurationService>();

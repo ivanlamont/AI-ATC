@@ -35,9 +35,14 @@ public interface IAzureSpeechService
     Task StopContinuousRecognitionAsync();
 
     /// <summary>
-    /// Check if Azure services are available
+    /// Check if aviation vocabulary is loaded
     /// </summary>
-    bool IsAzureAvailable { get; }
+    bool IsVocabularyLoaded { get; }
+
+    /// <summary>
+    /// Get vocabulary statistics if available
+    /// </summary>
+    VocabularyStats? GetVocabularyStats();
 
     /// <summary>
     /// Event fired when speech is recognized
@@ -59,6 +64,7 @@ public class AzureSpeechService : IAzureSpeechService
     private readonly ILogger<AzureSpeechService> _logger;
     private readonly SpeechRecognitionService _fallbackRecognition;
     private readonly TextToSpeechService _fallbackTTS;
+    private readonly AviationVocabularyService _vocabularyService;
     
     private string? _subscriptionKey;
     private string? _region;
@@ -66,6 +72,12 @@ public class AzureSpeechService : IAzureSpeechService
     private bool _isListening;
 
     public bool IsAzureAvailable => !string.IsNullOrEmpty(_subscriptionKey) && _isAzureInitialized;
+    public bool IsVocabularyLoaded => _vocabularyService.IsLoaded;
+
+    /// <summary>
+    /// Get vocabulary statistics
+    /// </summary>
+    public VocabularyStats? GetVocabularyStats() => _vocabularyService.IsLoaded ? _vocabularyService.GetStats() : null;
 
     public event EventHandler<SpeechRecognitionResult>? SpeechRecognized;
     public event EventHandler<string>? RecognitionUncertain;
@@ -74,12 +86,14 @@ public class AzureSpeechService : IAzureSpeechService
         HttpClient httpClient,
         ILogger<AzureSpeechService> logger,
         SpeechRecognitionService fallbackRecognition,
-        TextToSpeechService fallbackTTS)
+        TextToSpeechService fallbackTTS,
+        AviationVocabularyService vocabularyService)
     {
         _httpClient = httpClient;
         _logger = logger;
         _fallbackRecognition = fallbackRecognition;
         _fallbackTTS = fallbackTTS;
+        _vocabularyService = vocabularyService;
         
         // Wire up fallback events
         _fallbackRecognition.SpeechRecognized += OnFallbackSpeechRecognized;
@@ -91,6 +105,18 @@ public class AzureSpeechService : IAzureSpeechService
         {
             _subscriptionKey = subscriptionKey ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
             _region = region ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus";
+
+            // Load aviation vocabulary first
+            var vocabularyLoaded = await _vocabularyService.LoadVocabularyAsync();
+            if (vocabularyLoaded)
+            {
+                var stats = _vocabularyService.GetStats();
+                _logger.LogInformation($"Aviation vocabulary loaded: {stats.TotalTerms} terms, {stats.ControllerVerbs} controller verbs, {stats.PilotResponses} pilot responses");
+            }
+            else
+            {
+                _logger.LogWarning("Failed to load aviation vocabulary, proceeding without custom terms");
+            }
 
             if (string.IsNullOrEmpty(_subscriptionKey))
             {
@@ -216,7 +242,24 @@ public class AzureSpeechService : IAzureSpeechService
             request.Content = new ByteArrayContent(audioData);
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
 
+            // Enhanced query parameters with aviation vocabulary
             var queryParams = $"?language={language}&format=detailed&profanityAction=Removed";
+            
+            // Add custom vocabulary if available
+            if (_vocabularyService.IsLoaded)
+            {
+                queryParams += "&wordLevelTimestamps=true"; // Better for aviation phraseology
+                
+                // Add custom vocabulary terms to improve recognition
+                var vocabularyTerms = _vocabularyService.GetVocabularyTerms();
+                if (vocabularyTerms.Count > 0)
+                {
+                    // Azure Speech supports phrase lists for better recognition
+                    var phraseHints = string.Join(",", vocabularyTerms.Take(100)); // Limit to first 100 terms
+                    request.Headers.Add("X-CustomSpeech-PhraseList", phraseHints);
+                }
+            }
+            
             request.RequestUri = new Uri(endpoint + queryParams);
 
             var response = await _httpClient.SendAsync(request);
@@ -224,7 +267,15 @@ public class AzureSpeechService : IAzureSpeechService
             if (response.IsSuccessStatusCode)
             {
                 var jsonResponse = await response.Content.ReadAsStringAsync();
-                return ParseAzureResponse(jsonResponse);
+                var result = ParseAzureResponse(jsonResponse);
+                
+                // Post-process with aviation vocabulary if available
+                if (_vocabularyService.IsLoaded && result.IsSuccess)
+                {
+                    result.Text = EnhanceRecognitionWithVocabulary(result.Text);
+                }
+                
+                return result;
             }
             else
             {
@@ -306,7 +357,7 @@ public class AzureSpeechService : IAzureSpeechService
             _ => "en-US-DavisNeural"
         };
 
-        // Enhance text with aviation-specific pronunciations
+        // Enhance text with aviation-specific pronunciations from vocabulary
         var enhancedText = EnhanceAviationPhoneology(text);
 
         return $@"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
@@ -320,10 +371,22 @@ public class AzureSpeechService : IAzureSpeechService
 
     private string EnhanceAviationPhoneology(string text)
     {
+        var enhanced = text;
+        
+        // Apply vocabulary-based pronunciation dictionary if available
+        if (_vocabularyService.IsLoaded)
+        {
+            var pronunciationDict = _vocabularyService.GetPronunciationDictionary();
+            foreach (var kvp in pronunciationDict)
+            {
+                enhanced = enhanced.Replace(kvp.Key, kvp.Value, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
         // Replace numbers with aviation-specific pronunciations
-        var enhanced = text
+        enhanced = enhanced
             .Replace("0", "zero")
-            .Replace("1", "one")
+            .Replace("1", "one") 
             .Replace("2", "two")
             .Replace("3", "tree")  // Aviation pronunciation
             .Replace("4", "four")
@@ -333,10 +396,69 @@ public class AzureSpeechService : IAzureSpeechService
             .Replace("8", "eight")
             .Replace("9", "niner"); // Aviation pronunciation
 
-        // Add aviation phraseology enhancements
+        // Add aviation phraseology enhancements with SSML breaks
         enhanced = enhanced.Replace("Roger", "<break time='200ms'/>Roger<break time='200ms'/>");
         enhanced = enhanced.Replace("Wilco", "<break time='200ms'/>Wilco<break time='200ms'/>");
+        enhanced = enhanced.Replace("Affirmative", "<break time='150ms'/>Affirmative<break time='150ms'/>");
+        enhanced = enhanced.Replace("Negative", "<break time='150ms'/>Negative<break time='150ms'/>");
+        enhanced = enhanced.Replace("Unable", "<break time='150ms'/>Unable<break time='150ms'/>");
 
+        // Add emphasis for critical commands
+        enhanced = enhanced.Replace("CLEARED FOR TAKEOFF", "<emphasis level='strong'>CLEARED FOR TAKEOFF</emphasis>");
+        enhanced = enhanced.Replace("CLEARED TO LAND", "<emphasis level='strong'>CLEARED TO LAND</emphasis>");
+        enhanced = enhanced.Replace("HOLD SHORT", "<emphasis level='strong'>HOLD SHORT</emphasis>");
+
+        return enhanced;
+    }
+
+    private string EnhanceRecognitionWithVocabulary(string recognizedText)
+    {
+        if (string.IsNullOrWhiteSpace(recognizedText) || !_vocabularyService.IsLoaded)
+            return recognizedText;
+
+        var enhanced = recognizedText;
+
+        // Apply common aviation phraseology corrections
+        var vocabularyTerms = _vocabularyService.GetVocabularyTerms();
+        
+        // Correct common speech-to-text errors in aviation context
+        var commonCorrections = new Dictionary<string, string>
+        {
+            { "clear for takeoff", "CLEARED FOR TAKEOFF" },
+            { "clear to land", "CLEARED TO LAND" },
+            { "turn left heading", "TURN LEFT HEADING" },
+            { "turn right heading", "TURN RIGHT HEADING" },
+            { "climb and maintain", "CLIMB AND MAINTAIN" },
+            { "descend and maintain", "DESCEND AND MAINTAIN" },
+            { "contact departure", "CONTACT DEPARTURE" },
+            { "contact approach", "CONTACT APPROACH" },
+            { "hold short", "HOLD SHORT" },
+            { "taxi to", "TAXI TO" },
+            { "unable", "UNABLE" },
+            { "wilco", "WILCO" },
+            { "affirmative", "AFFIRMATIVE" },
+            { "negative", "NEGATIVE" }
+        };
+
+        foreach (var correction in commonCorrections)
+        {
+            enhanced = enhanced.Replace(correction.Key, correction.Value, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Ensure aviation terms are properly capitalized
+        foreach (var term in vocabularyTerms)
+        {
+            if (term.Length > 2) // Skip single letters
+            {
+                enhanced = System.Text.RegularExpressions.Regex.Replace(
+                    enhanced, 
+                    $@"\b{System.Text.RegularExpressions.Regex.Escape(term)}\b", 
+                    term, 
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+        }
+
+        _logger.LogDebug($"Enhanced recognition: '{recognizedText}' -> '{enhanced}'");
         return enhanced;
     }
 

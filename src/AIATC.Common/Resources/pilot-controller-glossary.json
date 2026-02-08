@@ -1,0 +1,209 @@
+{
+  "domain": "aviation.atc",
+  "version": "1.0",
+  "source": "FAA Pilot/Controller Glossary",
+  "language_style": {
+    "tone": ["concise", "authoritative", "procedural"],
+    "constraints": {
+      "avoid_explanations": true,
+      "prefer_imperatives": true,
+      "assume_shared_context": true,
+      "safety_priority": "highest"
+    }
+  },
+  "entities": {
+    "roles": {
+      "ATC": {
+        "description": "Air Traffic Control authority issuing clearances and instructions"
+      },
+      "Pilot": {
+        "description": "Pilot in command or flight crew receiving instructions"
+      },
+      "Facility": {
+        "types": [
+          "TOWER",
+          "APPROACH_CONTROL",
+          "ARTCC",
+          "FSS",
+          "ATCSCC"
+        ]
+      }
+    },
+    "aircraft": {
+      "classification": {
+        "approach_category": ["A", "B", "C", "D", "E"],
+        "wake_turbulence": ["SUPER", "HEAVY", "LARGE", "SMALL"]
+      },
+      "state": [
+        "AIRBORNE",
+        "ON_GROUND",
+        "HOLDING",
+        "ON_APPROACH",
+        "DEPARTING",
+        "MISSED_APPROACH"
+      ]
+    }
+  },
+  "actions": {
+    "controller_verbs": [
+      "CLEARED",
+      "MAINTAIN",
+      "EXPECT",
+      "PROCEED",
+      "TURN",
+      "CLIMB",
+      "DESCEND",
+      "HOLD",
+      "REPORT",
+      "CONTACT",
+      "ADVISE",
+      "CANCEL",
+      "RESUME",
+      "ABORT"
+    ],
+    "pilot_responses": [
+      "AFFIRMATIVE",
+      "NEGATIVE",
+      "UNABLE",
+      "STANDBY",
+      "REQUEST",
+      "WILCO"
+    ]
+  },
+  "clearances": {
+    "types": [
+      "AIR_TRAFFIC_CLEARANCE",
+      "APPROACH_CLEARANCE",
+      "TAKEOFF_CLEARANCE",
+      "LANDING_CLEARANCE"
+    ],
+    "constraints": [
+      "ALTITUDE_RESTRICTION",
+      "SPEED_RESTRICTION",
+      "HEADING_ASSIGNMENT",
+      "ROUTE_ASSIGNMENT"
+    ]
+  },
+  "navigation": {
+    "procedures": [
+      "IAP",
+      "RNAV",
+      "ILS",
+      "STAR",
+      "SID"
+    ],
+    "fixes": [
+      "IAF",
+      "IF",
+      "FAF",
+      "MAP"
+    ],
+    "geometry": [
+      "ARC",
+      "COURSE",
+      "RADIAL",
+      "AIRWAY"
+    ]
+  },
+  "airspace": {
+    "classes": ["A", "B", "C", "D", "E", "G"],
+    "special_use": [
+      "ADIZ",
+      "SUA",
+      "ATCAA",
+      "ALTRV"
+    ],
+    "flow_management": [
+      "AFP",
+      "EDCT",
+      "AAR",
+      "ADR"
+    ]
+  },
+  "surveillance": {
+    "systems": [
+      "RADAR",
+      "ARSR",
+      "ASR",
+      "ADS-B",
+      "WAM"
+    ],
+    "automation": [
+      "APD",
+      "APB",
+      "APDIA",
+      "ACL"
+    ],
+    "conflict_states": [
+      {
+        "level": "RED",
+        "separation_nm_max": 5
+      },
+      {
+        "level": "YELLOW",
+        "separation_nm_max": 12
+      },
+      {
+        "level": "BLUE",
+        "description": "Aircraft to airspace conflict"
+      }
+    ]
+  },
+  "airport_surface": {
+    "areas": [
+      "RUNWAY",
+      "TAXIWAY",
+      "APRON",
+      "MOVEMENT_AREA"
+    ],
+    "operations": [
+      "TAXI",
+      "BACK_TAXI",
+      "HOLD_SHORT",
+      "LINE_UP_AND_WAIT"
+    ],
+    "runway_conditions": {
+      "braking_action": [
+        "GOOD",
+        "GOOD_TO_MEDIUM",
+        "MEDIUM",
+        "MEDIUM_TO_POOR",
+        "POOR",
+        "NIL"
+      ],
+      "codes": "RWYCC"
+    }
+  },
+  "weather": {
+    "products": [
+      "ATIS",
+      "AIRMET",
+      "SIGMET",
+      "CONVECTIVE_SIGMET",
+      "CWA"
+    ],
+    "phenomena": [
+      "CEILING",
+      "VISIBILITY",
+      "WIND",
+      "TURBULENCE",
+      "ICING",
+      "THUNDERSTORMS"
+    ]
+  },
+  "phraseology_rules": {
+    "acknowledgement_required": [
+      "CLEARANCE",
+      "RUNWAY_ASSIGNMENT",
+      "ALTITUDE_CHANGE"
+    ],
+    "broadcast_only": [
+      "ATIS",
+      "WEATHER_ADVISORY"
+    ],
+    "non_control_prefixes": [
+      "ATC_ADVISES",
+      "ATC_REQUESTS"
+    ]
+  }
+}

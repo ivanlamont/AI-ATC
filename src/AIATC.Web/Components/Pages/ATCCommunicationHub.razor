@@ -13,6 +13,19 @@
         <div class="service-status">
             <span class="status-indicator @(isAzureAvailable ? "status-azure" : "status-fallback")"></span>
             <span>@(isAzureAvailable ? "Azure Speech Services" : "Web Speech API")</span>
+            @if (SpeechService.IsVocabularyLoaded)
+            {
+                <span class="vocabulary-status">
+                    <span class="status-indicator status-vocabulary"></span>
+                    Aviation Vocabulary Loaded
+                    @if (vocabularyStats != null)
+                    {
+                        <span class="vocabulary-details">
+                            (@vocabularyStats.TotalTerms terms, @vocabularyStats.LocalRadarFixes radar fixes)
+                        </span>
+                    }
+                </span>
+            }
         </div>
     </div>
 
@@ -185,6 +198,7 @@
     private List<AzureRegion> availableRegions = new();
     
     private List<CommunicationLogEntry> communicationLog = new();
+    private VocabularyStats? vocabularyStats = null;
     
     private readonly string[] commonPhrases = new[]
     {
@@ -223,6 +237,17 @@
         
         LogCommunication(CommunicationLogType.System, "System", 
             isAzureAvailable ? "Azure Speech Services initialized" : "Using Web Speech API fallback");
+            
+        if (SpeechService.IsVocabularyLoaded)
+        {
+            vocabularyStats = SpeechService.GetVocabularyStats();
+            LogCommunication(CommunicationLogType.System, "System", 
+                $"Aviation vocabulary loaded: {vocabularyStats?.TotalTerms ?? 0} terms including {vocabularyStats?.LocalRadarFixes ?? 0} local radar fixes");
+        }
+        else
+        {
+            LogCommunication(CommunicationLogType.Warning, "System", "Aviation vocabulary not available - using default recognition");
+        }
     }
 
     private async Task ToggleRecognition()
@@ -365,12 +390,17 @@
             // Create a compatible logger
             var loggerFactory = new LoggerFactory();
             var azureLogger = loggerFactory.CreateLogger<AzureSpeechService>();
+            var vocabLogger = loggerFactory.CreateLogger<AviationVocabularyService>();
+            
+            // Create vocabulary service for testing
+            var testVocabularyService = new AviationVocabularyService(httpClient, vocabLogger);
             
             var testService = new AzureSpeechService(
                 httpClient, 
                 azureLogger, 
                 testRecognition, 
-                testTTS);
+                testTTS,
+                testVocabularyService);
                 
             var success = await testService.InitializeAsync(tempConfig.SpeechSubscriptionKey, tempConfig.SpeechRegion);
             
