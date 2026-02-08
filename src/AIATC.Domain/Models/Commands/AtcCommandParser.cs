@@ -18,8 +18,17 @@ public class AtcCommandParser
         { "nine", "9" }, { "zero", "0" }, { "niner", "9" }
     };
 
+    // Common airline callsign patterns
+    private static readonly Dictionary<string, string> CallsignMappings = new()
+    {
+        { "united", "ual" }, { "american", "aal" }, { "delta", "dal" }, 
+        { "southwest", "swa" }, { "jetblue", "jbu" }, { "alaska", "asa" },
+        { "frontier", "fft" }, { "spirit", "nks" }, { "fedex", "fdx" },
+        { "ups", "ups" }, { "cargo", "cgo" }
+    };
+
     /// <summary>
-    /// Parses a text command into a structured ATC command
+    /// Parses a text command that may include a callsign into a structured ATC command
     /// </summary>
     public AtcCommand? Parse(string commandText)
     {
@@ -27,27 +36,61 @@ public class AtcCommandParser
             return null;
 
         var normalized = NormalizeCommand(commandText);
+        
+        // Extract callsign and command parts
+        var (callsign, command) = ExtractCallsignAndCommand(normalized);
 
         // Try to parse different command types in priority order
-        AtcCommand? result = TryParseHeading(normalized);
-        if (result != null) return result;
+        AtcCommand? result = TryParseHeading(command);
+        if (result != null) 
+        {
+            result.Callsign = callsign;
+            return result;
+        }
 
-        result = TryParseAltitude(normalized);
-        if (result != null) return result;
+        result = TryParseAltitude(command);
+        if (result != null)
+        {
+            result.Callsign = callsign;
+            return result;
+        }
 
-        result = TryParseSpeed(normalized);
-        if (result != null) return result;
+        result = TryParseSpeed(command);
+        if (result != null)
+        {
+            result.Callsign = callsign;
+            return result;
+        }
 
-        result = TryParseDirect(normalized);
-        if (result != null) return result;
+        result = TryParseDirect(command);
+        if (result != null)
+        {
+            result.Callsign = callsign;
+            return result;
+        }
 
-        result = TryParseContact(normalized);
-        if (result != null) return result;
+        result = TryParseContact(command);
+        if (result != null)
+        {
+            result.Callsign = callsign;
+            return result;
+        }
 
-        result = TryParseApproach(normalized);
-        if (result != null) return result;
+        result = TryParseApproach(command);
+        if (result != null)
+        {
+            result.Callsign = callsign;
+            return result;
+        }
 
-        return TryParseHold(normalized);
+        result = TryParseHold(command);
+        if (result != null)
+        {
+            result.Callsign = callsign;
+            return result;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -86,6 +129,38 @@ public class AtcCommandParser
         text = Regex.Replace(text, @"\s+", " ");
 
         return text;
+    }
+
+    /// <summary>
+    /// Extracts callsign from the beginning of a command and returns both callsign and remaining command
+    /// Examples:
+    /// "united 123 turn right heading 270" -> ("UAL123", "turn right heading 270")
+    /// "ual123 climb and maintain 10000" -> ("UAL123", "climb and maintain 10000")
+    /// "turn left heading 090" -> (null, "turn left heading 090")
+    /// </summary>
+    private (string? callsign, string command) ExtractCallsignAndCommand(string text)
+    {
+        // Pattern to match airline + flight number at the start
+        // Examples: "united 123", "ual123", "american 456", "aal456"
+        var callsignPattern = @"^(?:(united|american|delta|southwest|jetblue|alaska|frontier|spirit|fedex|ups|ual|aal|dal|swa|jbu|asa|fft|nks|fdx|cgo)\s*(\d+))\s*,?\s*(.*)$";
+        
+        var match = Regex.Match(text, callsignPattern, RegexOptions.IgnoreCase);
+        
+        if (match.Success)
+        {
+            var airline = match.Groups[1].Value.ToLower();
+            var flightNumber = match.Groups[2].Value;
+            var remainingCommand = match.Groups[3].Value.Trim();
+            
+            // Convert airline name to ICAO code
+            var icaoCode = CallsignMappings.ContainsKey(airline) ? CallsignMappings[airline] : airline;
+            var callsign = $"{icaoCode.ToUpper()}{flightNumber}";
+            
+            return (callsign, remainingCommand);
+        }
+
+        // If no callsign found, return the entire command
+        return (null, text);
     }
 
     private HeadingCommand? TryParseHeading(string text)

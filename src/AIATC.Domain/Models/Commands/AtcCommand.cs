@@ -6,6 +6,7 @@ namespace AIATC.Domain.Models.Commands;
 public abstract class AtcCommand
 {
     public string OriginalText { get; set; } = string.Empty;
+    public string? Callsign { get; set; }
     public DateTime IssuedAt { get; set; } = DateTime.UtcNow;
 
     public abstract string GetReadback();

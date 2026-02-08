@@ -7,6 +7,7 @@
 @using AIATC.Web.Components.Controls
 @using AIATC.Web.Components.Audio
 @using AIATC.Web.Services
+@using System.Linq
 @inject IJSRuntime JS
 @inject TextToSpeechService TextToSpeech
 
@@ -288,24 +289,73 @@
 
     private async Task HandleVoiceCommand(string transcript)
     {
+        Console.WriteLine($"[DEBUG] Voice command received: '{transcript}'");
+        
         // Parse the voice command
         var parsedCommand = commandParser.Parse(transcript);
 
-        if (parsedCommand != null && selectedAircraft != null)
+        if (parsedCommand == null)
         {
-            // Apply the voice command to the currently selected aircraft
-            var (valid, error) = clearanceApplicator.ValidateCommand(parsedCommand, selectedAircraft);
+            Console.WriteLine($"[DEBUG] Command could not be parsed: '{transcript}'");
+            return;
+        }
 
-            if (valid)
+        Console.WriteLine($"[DEBUG] Parsed command - Type: {parsedCommand.GetType().Name}, Callsign: '{parsedCommand.Callsign}'");
+
+        AircraftModel? targetAircraft = null;
+
+        // If command includes a callsign, find the matching aircraft
+        if (!string.IsNullOrEmpty(parsedCommand.Callsign))
+        {
+            targetAircraft = aircraft.FirstOrDefault(ac => 
+                string.Equals(ac.Callsign, parsedCommand.Callsign, StringComparison.OrdinalIgnoreCase));
+            
+            if (targetAircraft == null)
             {
-                clearanceApplicator.ApplyCommand(parsedCommand, selectedAircraft);
-                scoringService.RecordCommand(selectedAircraft.Callsign, parsedCommand);
-
-                // Generate pilot readback
-                await GeneratePilotReadback(selectedAircraft, parsedCommand);
-
-                aircraftHappiness = scoringService.GetAllAircraftHappiness();
+                Console.WriteLine($"[DEBUG] Aircraft not found for callsign: '{parsedCommand.Callsign}'. Available aircraft: {string.Join(", ", aircraft.Select(a => a.Callsign))}");
+                return;
             }
+            
+            Console.WriteLine($"[DEBUG] Found aircraft: {targetAircraft.Callsign}");
+            
+            // Auto-select the aircraft for visual feedback
+            selectedAircraft = targetAircraft;
+        }
+        else if (selectedAircraft != null)
+        {
+            Console.WriteLine($"[DEBUG] Using currently selected aircraft: {selectedAircraft.Callsign}");
+            // No callsign in command, use currently selected aircraft
+            targetAircraft = selectedAircraft;
+        }
+        else
+        {
+            Console.WriteLine($"[DEBUG] No callsign in command and no aircraft selected");
+            // No callsign and no selected aircraft
+            return;
+        }
+
+        // Apply the voice command to the target aircraft
+        var (valid, error) = clearanceApplicator.ValidateCommand(parsedCommand, targetAircraft);
+
+        Console.WriteLine($"[DEBUG] Command validation - Valid: {valid}, Error: '{error}'");
+
+        if (valid)
+        {
+            clearanceApplicator.ApplyCommand(parsedCommand, targetAircraft);
+            scoringService.RecordCommand(targetAircraft.Callsign, parsedCommand);
+
+            Console.WriteLine($"[DEBUG] Command applied to {targetAircraft.Callsign}");
+            
+            // For heading commands, show target heading
+            if (parsedCommand is HeadingCommand hc)
+            {
+                Console.WriteLine($"[DEBUG] Heading command - Target: {hc.TargetHeadingDegrees}°, Current: {targetAircraft.HeadingDegrees}°, Turn Rate: {targetAircraft.TurnRateRadPerSec}");
+            }
+
+            // Generate pilot readback
+            await GeneratePilotReadback(targetAircraft, parsedCommand);
+
+            aircraftHappiness = scoringService.GetAllAircraftHappiness();
         }
     }
 

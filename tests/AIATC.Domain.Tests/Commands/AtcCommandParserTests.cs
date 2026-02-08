@@ -29,6 +29,26 @@ public class AtcCommandParserTests
     }
 
     [Theory]
+    [InlineData("united 123 turn right heading 110", "UAL123", 110, TurnDirection.Right)]
+    [InlineData("UAL123 turn left heading 270", "UAL123", 270, TurnDirection.Left)]
+    [InlineData("delta 456, turn right heading 090", "DAL456", 90, TurnDirection.Right)]
+    [InlineData("american 789 heading 180", "AAL789", 180, TurnDirection.Either)]
+    [InlineData("southwest 321, fly heading 360", "SWA321", 360, TurnDirection.Either)]
+    public void Parse_HeadingCommandsWithCallsign_ExtractsCallsignAndHeading(
+        string command, string expectedCallsign, float expectedHeading, TurnDirection expectedDirection)
+    {
+        var result = _parser.Parse(command);
+
+        Assert.NotNull(result);
+        Assert.IsType<HeadingCommand>(result);
+
+        var headingCmd = (HeadingCommand)result;
+        Assert.Equal(expectedCallsign, headingCmd.Callsign);
+        Assert.Equal(expectedHeading, headingCmd.TargetHeadingDegrees);
+        Assert.Equal(expectedDirection, headingCmd.Direction);
+    }
+
+    [Theory]
     [InlineData("descend and maintain 4000", 4000, AltitudeChange.Descend)]
     [InlineData("climb and maintain 10000", 10000, AltitudeChange.Climb)]
     [InlineData("descend 3000", 3000, AltitudeChange.Descend)]
