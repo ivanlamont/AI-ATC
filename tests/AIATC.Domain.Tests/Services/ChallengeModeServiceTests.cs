@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using AIATC.Domain.Services;
 using AIATC.Domain.Models;
 using AIATC.Domain.Models.Scenarios;
+using AIATC.Common;
 
 namespace AIATC.Domain.Tests.Services
 {
@@ -24,10 +25,10 @@ namespace AIATC.Domain.Tests.Services
         }
 
         [Fact]
-        public async Task InitializeChallenge_WithValidScenario_ShouldSetReadyState()
+        public void InitializeChallenge_WithValidScenario_ShouldSetReadyState()
         {
             // Act
-            var result = await _service.InitializeChallengeAsync("demo-scenario", Difficulty.Intermediate);
+            var result = _service.InitializeChallenge("demo-scenario", Difficulty.Medium);
 
             // Assert
             Assert.True(result);
@@ -41,7 +42,7 @@ namespace AIATC.Domain.Tests.Services
         public void StartChallenge_FromReadyState_ShouldTransitionToRunning()
         {
             // Arrange
-            _service.State = ChallengeState.Ready;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
 
             // Act
             _service.StartChallenge();
@@ -57,10 +58,11 @@ namespace AIATC.Domain.Tests.Services
         public void StartChallenge_FromWrongState_ShouldNotTransition()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge(); // Now in Running state
 
             // Act
-            _service.StartChallenge();
+            _service.StartChallenge(); // Try to start again
 
             // Assert
             Assert.Equal(ChallengeState.Running, _service.State);
@@ -70,7 +72,8 @@ namespace AIATC.Domain.Tests.Services
         public void PauseChallenge_WhenRunning_ShouldTransitionToPaused()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
 
             // Act
             _service.PauseChallenge();
@@ -83,7 +86,9 @@ namespace AIATC.Domain.Tests.Services
         public void ResumeChallenge_WhenPaused_ShouldTransitionToRunning()
         {
             // Arrange
-            _service.State = ChallengeState.Paused;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
+            _service.PauseChallenge();
 
             // Act
             _service.ResumeChallenge();
@@ -96,7 +101,8 @@ namespace AIATC.Domain.Tests.Services
         public void UpdateChallenge_WhenRunning_ShouldAdvanceTime()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             _service.TimeMultiplier = 1.0f;
 
             // Act
@@ -111,7 +117,8 @@ namespace AIATC.Domain.Tests.Services
         public void UpdateChallenge_WithTimeMultiplier_ShouldScaleSimulationTime()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             _service.TimeMultiplier = 2.0f;
 
             // Act
@@ -126,7 +133,9 @@ namespace AIATC.Domain.Tests.Services
         public void UpdateChallenge_WhenPaused_ShouldNotAdvanceTime()
         {
             // Arrange
-            _service.State = ChallengeState.Paused;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
+            _service.PauseChallenge();
             float initialSimTime = _service.SimulationTimeSeconds;
 
             // Act
@@ -140,8 +149,9 @@ namespace AIATC.Domain.Tests.Services
         public void SubmitUserCommand_ShouldAddToCommandHistory()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
-            _service.SimulationTimeSeconds = 10.0f;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
+            _service.UpdateChallenge(10.0f); // Advance simulation time
             var aircraft = CreateTestAircraft();
 
             // Act
@@ -159,7 +169,9 @@ namespace AIATC.Domain.Tests.Services
         public void SubmitUserCommand_WhenNotRunning_ShouldNotAddCommand()
         {
             // Arrange
-            _service.State = ChallengeState.Paused;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
+            _service.PauseChallenge();
             var aircraft = CreateTestAircraft();
 
             // Act
@@ -173,8 +185,9 @@ namespace AIATC.Domain.Tests.Services
         public void GetCurrentComparison_ShouldReturnValidData()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
-            _service.SimulationTimeSeconds = 25.5f;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
+            _service.UpdateChallenge(25.5f); // Advance simulation time
 
             // Act
             var comparison = _service.GetCurrentComparison();
@@ -192,7 +205,8 @@ namespace AIATC.Domain.Tests.Services
         public void EndChallenge_WhenRunning_ShouldTransitionToCompleted()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
 
             // Act
             _service.EndChallenge();
@@ -207,7 +221,8 @@ namespace AIATC.Domain.Tests.Services
         public void DetermineWinner_ShouldReturnValidResult()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             _service.EndChallenge();
 
             // Act
@@ -227,7 +242,8 @@ namespace AIATC.Domain.Tests.Services
         {
             // Arrange
             var aircraft = CreateTestAircraft();
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             _service.SubmitUserCommand("descend to 3000", aircraft);
             _service.SubmitUserCommand("reduce speed to 180", aircraft);
 
@@ -255,7 +271,7 @@ namespace AIATC.Domain.Tests.Services
         public void StateChangeEvent_ShouldFireWhenStateChanges()
         {
             // Arrange
-            _service.State = ChallengeState.Ready;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
             var stateChangesFired = new List<ChallengeState>();
             _service.OnStateChanged += (s, e) => stateChangesFired.Add(e.NewState);
 
@@ -286,7 +302,8 @@ namespace AIATC.Domain.Tests.Services
         public void TimeMultiplier_ShouldAffectSimulationSpeed()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             _service.TimeMultiplier = 4.0f;
 
             // Act
@@ -301,7 +318,8 @@ namespace AIATC.Domain.Tests.Services
         public void MultipleUpdates_ShouldAccumulateTime()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             _service.TimeMultiplier = 1.0f;
 
             // Act
@@ -318,7 +336,8 @@ namespace AIATC.Domain.Tests.Services
         public void GetCurrentComparison_CommandCounts_ShouldMatchHistory()
         {
             // Arrange
-            _service.State = ChallengeState.Running;
+            _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+            _service.StartChallenge();
             var aircraft = CreateTestAircraft();
 
             _service.SubmitUserCommand("turn right heading 270", aircraft);
@@ -338,7 +357,22 @@ namespace AIATC.Domain.Tests.Services
         public void EndChallenge_FromVariousStates_ShouldEndIfApplicable(ChallengeState initialState)
         {
             // Arrange
-            _service.State = initialState;
+            if (initialState == ChallengeState.NotStarted)
+            {
+                // Leave in initial state
+            }
+            else if (initialState == ChallengeState.Paused)
+            {
+                _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+                _service.StartChallenge();
+                _service.PauseChallenge();
+            }
+            else if (initialState == ChallengeState.Completed)
+            {
+                _service.InitializeChallenge("demo-scenario", Difficulty.Easy);
+                _service.StartChallenge();
+                _service.EndChallenge();
+            }
 
             // Act
             _service.EndChallenge();
