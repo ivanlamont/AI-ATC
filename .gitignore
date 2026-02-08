@@ -33,3 +33,56 @@ wwwroot/
 *.user
 *.userosscache
 *.sln.docstates
+
+# Deployment artifacts and scripts
+.deploy-files/
+*.deploy
+deploy-*.ps1
+deploy-*.bat
+deploy-*.sh
+
+# Terraform state and variables
+terraform/**/.terraform/
+terraform/**/.terraform.lock.hcl
+terraform/**/terraform.tfstate
+terraform/**/terraform.tfstate.backup
+terraform/**/terraform.tfvars
+*.tfvars
+
+# Azure deployment files
+.azure/
+azure-deploy/
+azd-deploy/
+
+# VS Code workspace settings (keep base settings, exclude user-specific)
+.vscode/settings.json
+
+# Old version backups
+oldversion/
+backup/
+*.old
+
+# Documentation generation artifacts
+docs/generated/
+docs/temp/
+
+# Log files
+*.log
+logs/
+
+# IDE and editor files
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Node modules (if any frontend builds)
+node_modules/
+
+# Package manager lock files
+package-lock.json
+yarn.lock
