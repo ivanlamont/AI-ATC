@@ -5,6 +5,7 @@
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "chat.tools.terminal.autoApprove": {
-        "az": true
+        "az": true,
+        "dotnet run": true
     }
 }

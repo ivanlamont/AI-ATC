@@ -51,6 +51,28 @@
         }
     </div>
 
+    <!-- Text Input Fallback for Testing -->
+    @if (!_hasPermission || !_isInitialized)
+    {
+        <div class="text-input-fallback">
+            <div class="fallback-label">
+                <span>🎯 Text Input (for testing):</span>
+            </div>
+            <div class="fallback-input">
+                <input type="text" 
+                       @bind="_testCommandText"
+                       @onkeydown="OnTestCommandKeyDown"
+                       placeholder="Type command (e.g., 'United 123, turn right heading 110')"
+                       class="test-command-input" />
+                <button @onclick="SubmitTestCommand" 
+                        class="test-submit-button"
+                        disabled="@string.IsNullOrWhiteSpace(_testCommandText)">
+                    Send
+                </button>
+            </div>
+        </div>
+    }
+
     @if (_isListening && !string.IsNullOrEmpty(_lastTranscript))
     {
         <div class="transcript-display">
@@ -86,6 +108,7 @@
     private bool _hasPermission;
     private string? _lastTranscript;
     private string? _lastError;
+    private string _testCommandText = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -140,10 +163,35 @@
         _ttsEnabled = !_ttsEnabled;
     }
 
-    private async void OnSpeechRecognized(object? sender, string transcript)
+    // Text input fallback methods
+    private async Task OnTestCommandKeyDown(KeyboardEventArgs e)
     {
+        if (e.Key == "Enter")
+        {
+            await SubmitTestCommand();
+        }
+    }
+
+    private async Task SubmitTestCommand()
+    {
+        if (string.IsNullOrWhiteSpace(_testCommandText))
+            return;
+
+        Console.WriteLine($"[DEBUG] Test command submitted: '{_testCommandText}'");
+
+        // Simulate the speech recognition flow
+        await SimulateVoiceCommand(_testCommandText);
+
+        _testCommandText = string.Empty;
+    }
+
+    private async Task SimulateVoiceCommand(string transcript)
+    {
+        // This simulates what OnSpeechRecognized does
         _lastTranscript = transcript;
         _lastError = null;
+
+        Console.WriteLine($"[DEBUG] Simulated speech recognized: '{transcript}'");
 
         // Filter out readback-like responses to prevent feedback loops
         var lowerTranscript = transcript.ToLower();
@@ -153,13 +201,52 @@
             return;
         }
 
+        Console.WriteLine($"[DEBUG] Checking if can parse: '{transcript}'");
+
         // Validate if it's a valid command
         if (Parser != null && !Parser.CanParse(transcript))
         {
+            Console.WriteLine($"[DEBUG] Cannot parse command: '{transcript}'");
             _lastError = "Invalid command";
             await InvokeAsync(StateHasChanged);
             return;
         }
+
+        Console.WriteLine($"[DEBUG] Sending command to parent: '{transcript}'");
+
+        // Notify parent component
+        await OnCommandRecognized.InvokeAsync(transcript);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnSpeechRecognized(object? sender, string transcript)
+    {
+        _lastTranscript = transcript;
+        _lastError = null;
+
+        Console.WriteLine($"[DEBUG] Speech recognized: '{transcript}'");
+
+        // Filter out readback-like responses to prevent feedback loops
+        var lowerTranscript = transcript.ToLower();
+        if (IsLikelyReadback(lowerTranscript))
+        {
+            Console.WriteLine($"[DEBUG] Filtered readback: '{transcript}'");
+            return;
+        }
+
+        Console.WriteLine($"[DEBUG] Checking if can parse: '{transcript}'");
+
+        // Validate if it's a valid command
+        if (Parser != null && !Parser.CanParse(transcript))
+        {
+            Console.WriteLine($"[DEBUG] Cannot parse command: '{transcript}'");
+            _lastError = "Invalid command";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        Console.WriteLine($"[DEBUG] Sending command to parent: '{transcript}'");
 
         // Notify parent component
         await OnCommandRecognized.InvokeAsync(transcript);
@@ -172,15 +259,27 @@
     /// </summary>
     private bool IsLikelyReadback(string transcript)
     {
+        // Only filter responses that sound like pilot acknowledgments, 
+        // not controller instructions that might contain similar words
         var readbackPhrases = new[]
         {
-            "roger", "wilco", "affirm", "negative", 
-            "turn left heading", "turn right heading", 
-            "climb and maintain", "descend and maintain",
-            "contact", "proceed direct", "cleared"
+            "roger", "wilco", "affirm", "affirmative", "negative", 
+            "copy that", "understood", "will comply"
         };
         
-        return readbackPhrases.Any(phrase => transcript.Contains(phrase));
+        // Check if the transcript is ONLY a readback phrase or starts with callsign + readback
+        foreach (var phrase in readbackPhrases)
+        {
+            // Match exact readback or "CALLSIGN, readback"
+            if (transcript.Equals(phrase, StringComparison.OrdinalIgnoreCase) ||
+                transcript.EndsWith($", {phrase}", StringComparison.OrdinalIgnoreCase) ||
+                transcript.EndsWith($" {phrase}", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     private async void OnSpeechError(object? sender, string error)
@@ -257,3 +356,51 @@
         }
     }
 }
+
+<style>
+    .text-input-fallback {
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        background-color: #f9f9f9;
+    }
+
+    .fallback-label {
+        font-weight: bold;
+        margin-bottom: 5px;
+        color: #666;
+    }
+
+    .fallback-input {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .test-command-input {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        font-family: monospace;
+    }
+
+    .test-submit-button {
+        padding: 8px 16px;
+        background-color: #007acc;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+    }
+
+    .test-submit-button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+    }
+
+    .test-submit-button:hover:not(:disabled) {
+        background-color: #005a9e;
+    }
+</style>
