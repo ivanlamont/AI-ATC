@@ -327,7 +327,8 @@
         try
         {
             await TextToSpeech.SpeakPilotReadbackAsync(callsign, readback);
-            await OnReadbackSpoken.InvokeAsync($"{callsign}, {readback}");
+            // Notify parent with proper aviation format: instruction, callsign
+            await OnReadbackSpoken.InvokeAsync($"{readback}, {callsign}");
             
             // Wait a bit for TTS to finish and audio to clear
             await Task.Delay(1000);

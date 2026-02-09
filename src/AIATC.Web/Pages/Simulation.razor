@@ -364,14 +364,48 @@
         // Generate appropriate readback based on command type
         string readback = command switch
         {
-            HeadingCommand hc => $"Turn {(hc.Direction == TurnDirection.Left ? "left" : "right")} heading {hc.TargetHeadingDegrees:000}",
-            AltitudeCommand ac => $"{(ac.TargetAltitudeFeet > aircraft.AltitudeFt ? "Climb and maintain" : "Descend and maintain")} {(int)(ac.TargetAltitudeFeet / 100) * 100}",
-            SpeedCommand sc => $"{(sc.TargetSpeedKnots > aircraft.SpeedKnots ? "Increase" : "Reduce")} speed to {(int)sc.TargetSpeedKnots} knots",
+            HeadingCommand hc => $"Turn {(hc.Direction == TurnDirection.Left ? "left" : "right")} heading {SpellOutNumber((int)hc.TargetHeadingDegrees)}",
+            AltitudeCommand ac => $"{(ac.TargetAltitudeFeet > aircraft.AltitudeFt ? "Climb and maintain" : "Descend and maintain")} {SpellOutNumber((int)(ac.TargetAltitudeFeet / 100) * 100)}",
+            SpeedCommand sc => $"{(sc.TargetSpeedKnots > aircraft.SpeedKnots ? "Increase" : "Reduce")} speed to {SpellOutNumber((int)sc.TargetSpeedKnots)} knots",
             _ => "Roger"
         };
 
-        // Add callsign and speak with pilot voice
+        // Callsign at the end (proper aviation format)
         await TextToSpeech.SpeakPilotReadbackAsync(aircraft.Callsign, readback);
+    }
+
+    /// <summary>
+    /// Converts a number to individual digits for aviation readback
+    /// e.g., 300 -> "three zero zero", 10000 -> "one zero zero zero zero"
+    /// </summary>
+    private string SpellOutNumber(int number)
+    {
+        var digitWords = new Dictionary<char, string>
+        {
+            { '0', "zero" },
+            { '1', "one" },
+            { '2', "two" },
+            { '3', "three" },
+            { '4', "four" },
+            { '5', "five" },
+            { '6', "six" },
+            { '7', "seven" },
+            { '8', "eight" },
+            { '9', "niner" }  // Aviation standard
+        };
+
+        var numberStr = number.ToString();
+        var words = new List<string>();
+
+        foreach (var digit in numberStr)
+        {
+            if (digitWords.ContainsKey(digit))
+            {
+                words.Add(digitWords[digit]);
+            }
+        }
+
+        return string.Join(" ", words);
     }
 
     public void Dispose()

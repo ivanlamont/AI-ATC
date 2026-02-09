@@ -75,10 +75,12 @@ public class TextToSpeechService
 
     /// <summary>
     /// Speaks pilot readback with appropriate voice and radio effects
+    /// Format: [instruction], [callsign] (e.g., "Turn left heading two seven zero, United one two three")
     /// </summary>
     public async Task SpeakPilotReadbackAsync(string callsign, string readback)
     {
-        var text = $"{callsign}, {readback}";
+        // Callsign at the end, proper aviation format
+        var text = $"{readback}, {callsign}";
 
         var options = new SpeechOptions
         {
