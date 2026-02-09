@@ -1,5 +1,6 @@
 @using AIATC.Web.Services
 @using AIATC.Domain.Models.Commands
+@using System.Linq
 @inject SpeechRecognitionService SpeechRecognition
 @inject TextToSpeechService TextToSpeech
 @implements IAsyncDisposable
@@ -144,6 +145,14 @@
         _lastTranscript = transcript;
         _lastError = null;
 
+        // Filter out readback-like responses to prevent feedback loops
+        var lowerTranscript = transcript.ToLower();
+        if (IsLikelyReadback(lowerTranscript))
+        {
+            Console.WriteLine($"[DEBUG] Filtered readback: '{transcript}'");
+            return;
+        }
+
         // Validate if it's a valid command
         if (Parser != null && !Parser.CanParse(transcript))
         {
@@ -156,6 +165,22 @@
         await OnCommandRecognized.InvokeAsync(transcript);
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Detects if the transcript is likely a pilot readback to filter out feedback
+    /// </summary>
+    private bool IsLikelyReadback(string transcript)
+    {
+        var readbackPhrases = new[]
+        {
+            "roger", "wilco", "affirm", "negative", 
+            "turn left heading", "turn right heading", 
+            "climb and maintain", "descend and maintain",
+            "contact", "proceed direct", "cleared"
+        };
+        
+        return readbackPhrases.Any(phrase => transcript.Contains(phrase));
     }
 
     private async void OnSpeechError(object? sender, string error)
@@ -193,8 +218,29 @@
         if (!_ttsEnabled || !EnableTextToSpeech)
             return;
 
-        await TextToSpeech.SpeakPilotReadbackAsync(callsign, readback);
-        await OnReadbackSpoken.InvokeAsync($"{callsign}, {readback}");
+        // Temporarily pause listening to avoid feedback loop
+        bool wasListening = _isListening;
+        if (wasListening)
+        {
+            await SpeechRecognition.StopListeningAsync();
+        }
+
+        try
+        {
+            await TextToSpeech.SpeakPilotReadbackAsync(callsign, readback);
+            await OnReadbackSpoken.InvokeAsync($"{callsign}, {readback}");
+            
+            // Wait a bit for TTS to finish and audio to clear
+            await Task.Delay(1000);
+        }
+        finally
+        {
+            // Resume listening if it was active before
+            if (wasListening)
+            {
+                await SpeechRecognition.StartListeningAsync();
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()

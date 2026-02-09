@@ -150,8 +150,30 @@ public class AircraftModel
         SpeedKnots += AccelerationKnotsPerSec * deltaTimeSeconds;
         SpeedKnots = Math.Clamp(SpeedKnots, MinSpeedKnots, MaxSpeedKnots);
 
-        // Heading integration
-        HeadingRadians += TurnRateRadPerSec * deltaTimeSeconds;
+        // Heading integration with target heading control
+        if (TargetHeadingRadians.HasValue)
+        {
+            // Check if we're close to target heading
+            var headingError = TargetHeadingRadians.Value - HeadingRadians;
+            headingError = WrapAngle(headingError);
+            
+            // If within 2 degrees, stop turning and snap to target
+            if (Math.Abs(headingError) < 2 * SimulationConstants.DegreesToRadians)
+            {
+                HeadingRadians = TargetHeadingRadians.Value;
+                TurnRateRadPerSec = 0; // Stop turning
+            }
+            else
+            {
+                // Continue turning towards target
+                HeadingRadians += TurnRateRadPerSec * deltaTimeSeconds;
+            }
+        }
+        else
+        {
+            // No target heading, continue with current turn rate
+            HeadingRadians += TurnRateRadPerSec * deltaTimeSeconds;
+        }
         HeadingRadians = WrapAngle(HeadingRadians);
 
         // Altitude integration
