@@ -74,7 +74,7 @@ public class TextToSpeechService
     }
 
     /// <summary>
-    /// Speaks pilot readback with appropriate voice
+    /// Speaks pilot readback with appropriate voice and radio effects
     /// </summary>
     public async Task SpeakPilotReadbackAsync(string callsign, string readback)
     {
@@ -82,10 +82,11 @@ public class TextToSpeechService
 
         var options = new SpeechOptions
         {
-            Rate = 1.0f,     // Normal speed
-            Pitch = 1.0f,    // Normal pitch
+            Rate = 1.0f,     // Normal speed (will be slightly reduced by radio effects)
+            Pitch = 1.0f,    // Normal pitch (will be slightly lowered by radio effects)
             Volume = 0.9f,   // Slightly quieter than controller
-            Voice = "pilot"  // Use pilot voice if configured
+            Voice = "pilot", // Use pilot voice if configured
+            UseRadioEffects = true  // Enable radio quality simulation
         };
 
         await SpeakAsync(text, options);
@@ -179,4 +180,9 @@ public class SpeechOptions
     /// Voice identifier or type ("pilot", "controller", or voice name)
     /// </summary>
     public string? Voice { get; set; }
+
+    /// <summary>
+    /// Whether to apply radio quality effects (static, bandpass filtering, etc.)
+    /// </summary>
+    public bool UseRadioEffects { get; set; } = false;
 }

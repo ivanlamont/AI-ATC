@@ -140,6 +140,28 @@ public class AtcCommandParser
     /// </summary>
     private (string? callsign, string command) ExtractCallsignAndCommand(string text)
     {
+        // First, consolidate spaced-out digits in callsigns (e.g., "ual 1 2 3" -> "ual123")
+        // Look for airline code followed by spaced digits at the start of the command
+        var spacedDigitsPattern = @"^(united|american|delta|southwest|jetblue|alaska|frontier|spirit|fedex|ups|ual|aal|dal|swa|jbu|asa|fft|nks|fdx|cgo)(\s+\d)+\s+(.*)$";
+        var spacedMatch = Regex.Match(text, spacedDigitsPattern, RegexOptions.IgnoreCase);
+        
+        if (spacedMatch.Success)
+        {
+            var airline = spacedMatch.Groups[1].Value;
+            // Remove all spaces from the digit captures and combine
+            var digitsWithSpaces = spacedMatch.Groups[2].Value;
+            var flightNumber = Regex.Replace(digitsWithSpaces, @"\s+", "");
+            var remainingCommand = spacedMatch.Groups[3].Value.Trim();
+            
+            // Convert airline name to ICAO code
+            var icaoCode = CallsignMappings.ContainsKey(airline.ToLower()) 
+                ? CallsignMappings[airline.ToLower()] 
+                : airline;
+            var callsign = $"{icaoCode.ToUpper()}{flightNumber}";
+            
+            return (callsign, remainingCommand);
+        }
+        
         // Pattern to match airline + flight number at the start
         // Examples: "united 123", "ual123", "american 456", "aal456"
         var callsignPattern = @"^(?:(united|american|delta|southwest|jetblue|alaska|frontier|spirit|fedex|ups|ual|aal|dal|swa|jbu|asa|fft|nks|fdx|cgo)\s*(\d+))\s*,?\s*(.*)$";

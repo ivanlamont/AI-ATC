@@ -153,20 +153,29 @@ public class AircraftModel
         // Heading integration with target heading control
         if (TargetHeadingRadians.HasValue)
         {
-            // Check if we're close to target heading
+            // Calculate heading error (shortest angular distance)
             var headingError = TargetHeadingRadians.Value - HeadingRadians;
             headingError = WrapAngle(headingError);
             
-            // If within 2 degrees, stop turning and snap to target
-            if (Math.Abs(headingError) < 2 * SimulationConstants.DegreesToRadians)
+            // Calculate how much we would turn this timestep
+            var turnThisStep = TurnRateRadPerSec * deltaTimeSeconds;
+            
+            // If we're very close to target (within 1 degree), snap to it
+            if (Math.Abs(headingError) < 1 * SimulationConstants.DegreesToRadians)
             {
                 HeadingRadians = TargetHeadingRadians.Value;
                 TurnRateRadPerSec = 0; // Stop turning
             }
+            // If we would overshoot the target this timestep, reduce turn rate to hit it exactly
+            else if (Math.Abs(turnThisStep) > Math.Abs(headingError))
+            {
+                HeadingRadians = TargetHeadingRadians.Value;
+                TurnRateRadPerSec = 0; // Stop turning, we've reached the target
+            }
             else
             {
                 // Continue turning towards target
-                HeadingRadians += TurnRateRadPerSec * deltaTimeSeconds;
+                HeadingRadians += turnThisStep;
             }
         }
         else
