@@ -1,14 +1,59 @@
-replicaCount: 3
+# Web Application Configuration
+web:
+  replicaCount: 3
+  image:
+    repository: aiatc-web
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 80
+    targetPort: 5000
+  dapr:
+    enabled: true
+    appId: "web-service"
+    appPort: 5000
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
 
-image:
-  repository: aiatc
-  tag: "latest"
-  pullPolicy: IfNotPresent
-
-service:
-  type: LoadBalancer
-  port: 80
-  targetPort: 5000
+# Scenario Service Configuration
+scenarioService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: aiatc-scenario-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    grpcPort: 5001
+  dapr:
+    enabled: true
+    appId: "scenario-service"
+    appPort: 5001
+    appProtocol: "grpc"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
 
 ingress:
   enabled: true
@@ -19,31 +64,47 @@ ingress:
         - path: /
           pathType: Prefix
 
-resources:
-  requests:
-    memory: "256Mi"
-    cpu: "250m"
-  limits:
-    memory: "512Mi"
-    cpu: "500m"
-
-autoscaling:
-  enabled: true
-  minReplicas: 3
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
-
+# PostgreSQL for scenario usage data
 postgresql:
   enabled: true
   auth:
     username: aiatc
     password: aiatc_k8s_password
-    database: aiatc
+    database: aiatc_usage
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
 
+# Redis for Dapr state store and pub/sub
 redis:
   enabled: true
   auth:
     enabled: false
+
+# External Reference Database Configuration
+# This database is not managed by this Helm chart
+externalReferenceDb:
+  enabled: true
+  host: "reference-db-service.default.svc.cluster.local"
+  port: 5432
+  database: "arinc424"
+  username: "arinc424"
+  schema: "cycle2508"
+  # Store password in a Kubernetes secret
+  passwordSecretName: "reference-db-credentials"
+  passwordSecretKey: "password"
+  # Default password value (should be overridden in production)
+  passwordValue: "fly_@irline_RADA4!"
+
+# FlightAware API Configuration
+flightAware:
+  apiKey: ""
+
+# Dapr Configuration
+dapr:
+  enabled: true
+  version: "1.16.0"
 
 env:
   ASPNETCORE_ENVIRONMENT: Production

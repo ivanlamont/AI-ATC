@@ -3,13 +3,21 @@
 @using AIATC.Domain.Models.Commands
 @using AIATC.Domain.Models.Navigation
 @using AIATC.Domain.Models.Scoring
+@using AIATC.Domain.Models.Aviation
 @using AIATC.Web.Components.Radar
 @using AIATC.Web.Components.Controls
 @using AIATC.Web.Components.Audio
 @using AIATC.Web.Services
+@using AIATC.ScenarioService.Protos
 @using System.Linq
+@using System.Text.RegularExpressions
 @inject IJSRuntime JS
 @inject TextToSpeechService TextToSpeech
+@inject INavigationService NavigationService
+@inject NavigationManager NavigationManager
+@inject IScenarioServiceClient ScenarioServiceClient
+@inject IAuthService AuthService
+@inject IConfiguration Configuration
 
 <PageTitle>AI ATC Simulation</PageTitle>
 
@@ -49,19 +57,105 @@
                 <option value="4">4× Speed</option>
                 <option value="8">8× Speed</option>
             </select>
+            <button class="control-btn live-traffic-btn" @onclick="ReloadLiveTraffic" title="Reload with live air traffic and weather">
+                🌐 Live Traffic
+            </button>
+            @if (AuthService.IsAuthenticated)
+            {
+                <button class="control-btn" @onclick="OpenScenariosModalAsync" title="Open scenarios">
+                    📚 Scenarios
+                </button>
+                <button class="control-btn" @onclick="SaveScenarioAsync" title="Save current scenario state">
+                    💾 Save
+                </button>
+            }
         </div>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(saveStatus))
+    {
+        <div class="scenario-info" style="padding: 0.4rem 1rem;">
+            @saveStatus
+        </div>
+    }
+
+    @if (showScenariosModal)
+    {
+        <div class="scenario-modal-backdrop" @onclick="CloseScenariosModal"></div>
+        <div class="scenario-modal" role="dialog" aria-modal="true" aria-label="Scenarios">
+            <div class="scenario-modal-header">
+                <h3>Scenarios</h3>
+                <button class="control-btn" @onclick="CloseScenariosModal">Close</button>
+            </div>
+            <div class="scenario-modal-body">
+                <div class="scenario-list-pane">
+                    <div class="scenario-modal-actions">
+                        <button class="control-btn" @onclick="SaveScenarioAsync">Save Current</button>
+                        <button class="control-btn" @onclick="LoadSelectedScenarioAsync" disabled="@(selectedScenario is null)">Load Selected</button>
+                    </div>
+                    @if (isLoadingScenarioCatalog)
+                    {
+                        <div class="scenario-info">Loading scenarios...</div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(scenariosModalError))
+                    {
+                        <div class="scenario-info">@scenariosModalError</div>
+                    }
+                    else if (availableScenarios.Count == 0)
+                    {
+                        <div class="scenario-info">No scenarios available.</div>
+                    }
+                    else
+                    {
+                        @foreach (var item in availableScenarios)
+                        {
+                            var isSelected = selectedScenario?.Id == item.Id;
+                            <button class="scenario-list-item @(isSelected ? "selected" : "")" @onclick="() => SelectScenario(item)">
+                                <span class="name">@item.Name</span>
+                                <span class="meta">@item.AirportCode · @item.Difficulty</span>
+                            </button>
+                        }
+                    }
+                </div>
+                <div class="scenario-details-pane">
+                    @if (selectedScenario == null)
+                    {
+                        <div class="scenario-info">Select a scenario to view details.</div>
+                    }
+                    else
+                    {
+                        <h4>@selectedScenario.Name</h4>
+                        <div class="detail-row"><span>Location:</span><span>@selectedScenario.AirportCode</span></div>
+                        <div class="detail-row"><span>Description:</span><span>@(string.IsNullOrWhiteSpace(selectedScenario.Description) ? "No description provided." : selectedScenario.Description)</span></div>
+                        <div class="detail-row"><span>Number of airplanes:</span><span>@aircraft.Count</span></div>
+                        <div class="detail-row"><span>Current score:</span><span>@sessionScore.TotalScore</span></div>
+                        <div class="detail-row"><span>Weather summary:</span><span>@GetWeatherSummary()</span></div>
+                        <div class="scenario-modal-actions">
+                            <button class="control-btn" @onclick="CloseScenariosModal">OK</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 
     <div class="main-content">
         <div class="radar-section">
             <RadarDisplay Aircraft="@aircraft"
                           Fixes="@fixes"
                           Airport="@airport"
+                          Runways="@runways"
                           RangeNm="50"
+                          MinZoomLevel="@minRadarZoomLevel"
+                          MaxZoomLevel="@maxRadarZoomLevel"
                           CanvasWidth="1024"
                           CanvasHeight="768"
                           OnAircraftSelected="OnAircraftSelected"
                           @ref="radarDisplay" />
+            @if (isLoadingScenario)
+            {
+                <div class="loading-overlay">Loading scenario...</div>
+            }
         </div>
 
         <div class="control-section">
@@ -113,6 +207,9 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "openScenarios")]
+    public string? OpenScenariosQuery { get; set; }
+
     private RadarDisplay? radarDisplay;
     private CommandInput? commandInput;
 
@@ -120,8 +217,24 @@
     private List<AircraftModel> aircraft = new();
     private List<Fix> fixes = new();
     private AirportModel? airport;
+    private List<Runway> runways = new();
     private AircraftModel? selectedAircraft;
     private string scenarioName = "Basic Traffic Pattern";
+    private string airportCode = "KSFO";
+    private bool isLoadingScenario = false;
+    private string? saveStatus;
+    private bool pendingInitialAutoSave = false;
+    private bool hasCompletedInitialAutoSave = false;
+    private bool showScenariosModal = false;
+    private bool isLoadingScenarioCatalog = false;
+    private string? scenariosModalError;
+    private List<ScenarioResponse> availableScenarios = new();
+    private ScenarioResponse? selectedScenario;
+    private bool handlingOpenScenariosQuery = false;
+    
+    // Radar center coordinates
+    private double CenterLatitude = 33.4255; // Default to Atlanta area
+    private double CenterLongitude = -84.4693;
 
     // Services
     private AtcCommandParser commandParser = new();
@@ -133,72 +246,74 @@
     private bool isPaused = false;  // Start unpaused so aircraft move
     private float timeMultiplier = 1.0f;
     private System.Threading.Timer? simulationTimer;
+    private DateTime lastUiRefreshUtc = DateTime.MinValue;
+    private readonly TimeSpan uiRefreshInterval = TimeSpan.FromMilliseconds(250);
+    private readonly float minRadarZoomLevel = 0.5f;
+    private readonly float maxRadarZoomLevel = 20.0f;
+    private readonly int radarScreenRefreshRateMs = 2000;
 
     // Scoring
     private SessionScore sessionScore = new();
     private Dictionary<string, AircraftHappiness> aircraftHappiness = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        // Initialize with sample data
-        airport = new AirportModel
-        {
-            IcaoCode = "KSFO",
-            PositionNm = new Vector2(0, 0),
-            AltitudeFt = 13
-        };
+        AuthService.AuthStateChanged += HandleAuthStateChanged;
+        await AuthService.InitializeAsync();
 
         // Load sample navigation data
         navigationDatabase = SampleNavigationData.CreateSampleDatabase();
-        fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 100);
+        fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
 
         // Start scoring session
         scoringService.StartNewSession($"session-{DateTime.UtcNow:yyyyMMdd-HHmmss}", timeMultiplier);
         sessionScore = scoringService.GetCurrentSession();
 
-        // Spawn sample aircraft
-        SpawnSampleAircraft();
+        // Load startup scenario via ScenarioService gRPC
+        await LoadStartupScenarioAsync();
 
         // Start simulation loop
-        simulationTimer = new System.Threading.Timer(SimulationTick, null, 0, 100); // 10 Hz
+        simulationTimer = new System.Threading.Timer(SimulationTick, null, 0, period: radarScreenRefreshRateMs);
     }
 
-    private void SpawnSampleAircraft()
+    protected override void OnParametersSet()
     {
-        var aircraft1 = new AircraftModel
+        if (handlingOpenScenariosQuery)
         {
-            Callsign = "UAL123",
-            PositionNm = new Vector2(-20, 15),
-            HeadingDegrees = 90,
-            SpeedKnots = 220,
-            AltitudeFt = 8000,
-            MinSpeedKnots = 160,
-            MaxSpeedKnots = 280
-        };
+            return;
+        }
 
-        var aircraft2 = new AircraftModel
+        if (!string.IsNullOrWhiteSpace(OpenScenariosQuery) && OpenScenariosQuery == "1")
         {
-            Callsign = "DAL456",
-            PositionNm = new Vector2(15, -18),
-            HeadingDegrees = 270,
-            SpeedKnots = 200,
-            AltitudeFt = 10000,
-            MinSpeedKnots = 160,
-            MaxSpeedKnots = 280
-        };
-
-        aircraft.Add(aircraft1);
-        aircraft.Add(aircraft2);
-
-        scoringService.RegisterAircraft("UAL123", 30);
-        scoringService.RegisterAircraft("DAL456", 25);
-
-        aircraftHappiness = scoringService.GetAllAircraftHappiness();
+            handlingOpenScenariosQuery = true;
+            _ = InvokeAsync(async () =>
+            {
+                await OpenScenariosModalAsync();
+                NavigationManager.NavigateTo("/", replace: true);
+                handlingOpenScenariosQuery = false;
+            });
+        }
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!hasCompletedInitialAutoSave &&
+            pendingInitialAutoSave &&
+            !isLoadingScenario &&
+            airport != null &&
+            !string.IsNullOrWhiteSpace(airport.IcaoCode) &&
+            runways.Count > 0)
+        {
+            pendingInitialAutoSave = false;
+            hasCompletedInitialAutoSave = true;
+            await AutoSaveInitialScenarioStateAsync();
+        }
+    }
+
 
     private void SimulationTick(object? state)
     {
-        if (isPaused) return;
+        if (isPaused || isLoadingScenario) return;
 
         float deltaTime = 0.1f * timeMultiplier; // 100ms * multiplier
 
@@ -215,13 +330,22 @@
         // Check separation violations
         CheckSeparation();
 
-        // Update UI
-        InvokeAsync(async () =>
+        var now = DateTime.UtcNow;
+        if (now - lastUiRefreshUtc < uiRefreshInterval)
+        {
+            return;
+        }
+
+        lastUiRefreshUtc = now;
+
+        // Update UI (throttled to reduce rendering pressure)
+        _ = InvokeAsync(async () =>
         {
             if (radarDisplay != null)
             {
                 await radarDisplay.UpdateDisplay();
             }
+
             StateHasChanged();
         });
     }
@@ -410,7 +534,677 @@
 
     public void Dispose()
     {
+        AuthService.AuthStateChanged -= HandleAuthStateChanged;
         simulationTimer?.Dispose();
         scoringService.EndSession();
     }
+
+    private async Task SaveScenarioAsync()
+    {
+        if (!AuthService.IsAuthenticated || AuthService.CurrentUser == null)
+        {
+            saveStatus = "Login required before saving.";
+            return;
+        }
+
+        try
+        {
+            var saveRequest = new SaveScenarioStateRequest
+            {
+                UserId = AuthService.CurrentUser.UserId,
+                AirportCode = airportCode,
+                SaveName = $"Save {DateTime.Now:HH:mm:ss}",
+                ProgressPercentage = sessionScore.Statistics.TotalAircraft > 0
+                    ? Math.Min(100, sessionScore.Statistics.SuccessfulLandings * 100.0 / sessionScore.Statistics.TotalAircraft)
+                    : 0,
+                SavedState = BuildScenarioStateJson()
+            };
+
+            var saveResponse = await ScenarioServiceClient.SaveScenarioStateAsync(saveRequest);
+            var idPreview = string.IsNullOrWhiteSpace(saveResponse.SavedScenarioId)
+                ? "n/a"
+                : saveResponse.SavedScenarioId[..Math.Min(8, saveResponse.SavedScenarioId.Length)];
+            saveStatus = saveResponse.Success
+                ? $"Saved ({idPreview}...) at {DateTime.Now:HH:mm:ss}"
+                : $"Save failed: {saveResponse.Message}";
+        }
+        catch (Exception ex)
+        {
+            saveStatus = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private async Task LoadScenarioDisplayDataAsync(float radiusNm = 50.0f, bool includeLiveAircraft = true)
+    {
+        isLoadingScenario = true;
+        saveStatus = null;
+        aircraft.Clear();
+        runways.Clear();
+        fixes.Clear();
+        airport = null;
+        selectedAircraft = null;
+
+        if (radarDisplay != null)
+        {
+            await radarDisplay.UpdateDisplay();
+        }
+
+        try
+        {
+            var airportResponse = await ScenarioServiceClient.GetAirportDataAsync(airportCode);
+
+            CenterLatitude = airportResponse.Latitude;
+            CenterLongitude = airportResponse.Longitude;
+
+            airport = new AirportModel
+            {
+                IcaoCode = airportResponse.IcaoCode,
+                Name = airportResponse.Name,
+                AltitudeFt = airportResponse.ElevationFt,
+                PositionNm = new Vector2(0, 0)
+            };
+
+            runways = BuildDisplayRunways(airportResponse.Runways);
+
+            if (includeLiveAircraft)
+            {
+                var initialAircraftResponse = await ScenarioServiceClient.GetInitialAircraftPositionsAsync(airportCode, radiusNm);
+                aircraft = initialAircraftResponse.Aircraft
+                    .Select(MapAircraft)
+                    .ToList();
+
+                foreach (var ac in aircraft)
+                {
+                    scoringService.RegisterAircraft(ac.Callsign, 30);
+                }
+            }
+
+            fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
+            aircraftHappiness = scoringService.GetAllAircraftHappiness();
+            scenarioName = includeLiveAircraft
+                ? $"Live Scenario - {airportCode}"
+                : $"Layout Only - {airportCode}";
+
+            if (!hasCompletedInitialAutoSave &&
+                airport != null &&
+                !string.IsNullOrWhiteSpace(airport.IcaoCode) &&
+                runways.Count > 0)
+            {
+                pendingInitialAutoSave = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Failed to load scenario display data via gRPC: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingScenario = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadStartupScenarioAsync(float radiusNm = 50.0f)
+    {
+        try
+        {
+            var scenarios = await ScenarioServiceClient.ListScenariosAsync(new ListScenariosRequest
+            {
+                Page = 1,
+                PageSize = 1
+            });
+
+            if (scenarios.TotalCount <= 0)
+            {
+                airportCode = "KSFO";
+                Console.WriteLine("[INFO] No scenarios found in database. Loading live traffic for default airport KSFO.");
+                await LoadScenarioDisplayDataAsync(radiusNm);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[WARN] Unable to check scenario count at startup: {ex.Message}");
+        }
+
+        var startupSavedScenarioId = Configuration["ScenarioService:StartupSavedScenarioId"];
+        if (!string.IsNullOrWhiteSpace(startupSavedScenarioId))
+        {
+            var loaded = await TryLoadSavedScenarioAsync(startupSavedScenarioId);
+            if (loaded)
+            {
+                return;
+            }
+
+            Console.WriteLine($"[WARN] Failed to load saved scenario '{startupSavedScenarioId}'. Falling back to initial scenario load.");
+        }
+
+        await LoadScenarioDisplayDataAsync(radiusNm);
+    }
+
+    private async Task OpenScenariosModalAsync()
+    {
+        showScenariosModal = true;
+        scenariosModalError = null;
+        await LoadAvailableScenariosAsync();
+        StateHasChanged();
+    }
+
+    private void CloseScenariosModal()
+    {
+        showScenariosModal = false;
+    }
+
+    private void SelectScenario(ScenarioResponse scenario)
+    {
+        selectedScenario = scenario;
+    }
+
+    private async Task LoadAvailableScenariosAsync()
+    {
+        isLoadingScenarioCatalog = true;
+        scenariosModalError = null;
+
+        try
+        {
+            var all = new List<ScenarioResponse>();
+            var page = 1;
+            const int pageSize = 50;
+
+            while (true)
+            {
+                var response = await ScenarioServiceClient.ListScenariosAsync(new ListScenariosRequest
+                {
+                    Page = page,
+                    PageSize = pageSize
+                });
+
+                if (response.Scenarios.Count == 0)
+                {
+                    break;
+                }
+
+                all.AddRange(response.Scenarios);
+
+                if (all.Count >= response.TotalCount)
+                {
+                    break;
+                }
+
+                page++;
+            }
+
+            availableScenarios = all
+                .OrderBy(s => s.Name)
+                .ToList();
+
+            selectedScenario = availableScenarios.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            scenariosModalError = $"Failed to load scenarios: {ex.Message}";
+            availableScenarios.Clear();
+            selectedScenario = null;
+        }
+        finally
+        {
+            isLoadingScenarioCatalog = false;
+        }
+    }
+
+    private async Task LoadSelectedScenarioAsync()
+    {
+        if (selectedScenario == null)
+        {
+            return;
+        }
+
+        airportCode = string.IsNullOrWhiteSpace(selectedScenario.AirportCode) ? airportCode : selectedScenario.AirportCode;
+        await LoadScenarioDisplayDataAsync();
+        scenarioName = selectedScenario.Name;
+        showScenariosModal = false;
+        StateHasChanged();
+    }
+
+    private string GetWeatherSummary() => "Live weather summary unavailable";
+
+    private async Task<bool> TryLoadSavedScenarioAsync(string savedScenarioId)
+    {
+        isLoadingScenario = true;
+        saveStatus = null;
+        aircraft.Clear();
+        runways.Clear();
+        fixes.Clear();
+        airport = null;
+        selectedAircraft = null;
+
+        if (radarDisplay != null)
+        {
+            await radarDisplay.UpdateDisplay();
+        }
+
+        try
+        {
+            var session = await ScenarioServiceClient.LoadProgressAsync(savedScenarioId);
+            if (session?.AirportData == null || string.IsNullOrWhiteSpace(session.AirportData.IcaoCode))
+            {
+                Console.WriteLine($"[WARN] Saved scenario '{savedScenarioId}' returned no airport data.");
+                return false;
+            }
+
+            airportCode = session.AirportData.IcaoCode;
+            CenterLatitude = session.AirportData.Latitude;
+            CenterLongitude = session.AirportData.Longitude;
+
+            airport = new AirportModel
+            {
+                IcaoCode = session.AirportData.IcaoCode,
+                Name = session.AirportData.Name,
+                AltitudeFt = session.AirportData.ElevationFt,
+                PositionNm = new Vector2(0, 0)
+            };
+
+            runways = BuildDisplayRunways(session.AirportData.Runways);
+
+            aircraft = session.InitialAircraft
+                .Select(MapAircraft)
+                .ToList();
+
+            foreach (var ac in aircraft)
+            {
+                scoringService.RegisterAircraft(ac.Callsign, 30);
+            }
+
+            fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
+            aircraftHappiness = scoringService.GetAllAircraftHappiness();
+            scenarioName = $"Loaded Scenario - {savedScenarioId[..Math.Min(savedScenarioId.Length, 8)]}...";
+
+            if (!hasCompletedInitialAutoSave &&
+                airport != null &&
+                !string.IsNullOrWhiteSpace(airport.IcaoCode) &&
+                runways.Count > 0)
+            {
+                pendingInitialAutoSave = true;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Failed to load saved scenario '{savedScenarioId}': {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            isLoadingScenario = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AutoSaveInitialScenarioStateAsync()
+    {
+        try
+        {
+            var saveRequest = new SaveScenarioStateRequest
+            {
+                UserId = AuthService.CurrentUser?.UserId ?? "system:auto",
+                AirportCode = airportCode,
+                SaveName = $"Initial Load {DateTime.Now:HH:mm:ss}",
+                ProgressPercentage = 0,
+                SavedState = BuildScenarioStateJson()
+            };
+
+            var response = await ScenarioServiceClient.SaveScenarioStateAsync(saveRequest);
+            if (response.Success)
+            {
+                Console.WriteLine($"[INFO] Initial scenario state auto-saved at {DateTime.Now:HH:mm:ss}");
+            }
+            else
+            {
+                Console.WriteLine($"[WARN] Initial scenario auto-save failed: {response.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[WARN] Initial scenario auto-save failed: {ex.Message}");
+        }
+    }
+
+    private async Task ReloadLiveTraffic()
+    {
+        try
+        {
+            // Clear existing aircraft
+            aircraft.Clear();
+            var radiusNm = 50.0f;
+
+            // Get live aircraft from ScenarioService gRPC endpoint
+            var liveFlights = await ScenarioServiceClient.GetLiveFlightsAsync(airportCode, radiusNm);
+            var liveAircraft = liveFlights.Aircraft.Select(MapAircraft);
+
+            // Add live aircraft to simulation
+            foreach (var liveAc in liveAircraft)
+            {
+                aircraft.Add(liveAc);
+                scoringService.RegisterAircraft(liveAc.Callsign, 30);
+            }
+
+            // Update scenario name to indicate live traffic
+            scenarioName = $"Live Traffic - {DateTime.Now:HH:mm:ss}";
+            
+            // Update happiness tracking
+            aircraftHappiness = scoringService.GetAllAircraftHappiness();
+
+            // Update radar display
+            if (radarDisplay != null)
+            {
+                await radarDisplay.UpdateDisplay();
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Failed to reload live traffic: {ex.Message}");
+        }
+    }
+
+    private string BuildScenarioStateJson()
+    {
+        var state = new
+        {
+            savedAtUtc = DateTime.UtcNow,
+            airportCode,
+            scenarioName,
+            isPaused,
+            timeMultiplier,
+            score = sessionScore.TotalScore,
+            aircraft = aircraft.Select(ac => new
+            {
+                ac.Callsign,
+                ac.AircraftType,
+                ac.PositionNm.X,
+                ac.PositionNm.Y,
+                ac.HeadingDegrees,
+                ac.SpeedKnots,
+                ac.AltitudeFt,
+                ac.VerticalSpeedFpm
+            }).ToList()
+        };
+
+        return System.Text.Json.JsonSerializer.Serialize(state);
+    }
+
+    private void HandleAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    private List<Runway> BuildDisplayRunways(IEnumerable<RunwayData> runwayDataList)
+    {
+        var grouped = new Dictionary<string, List<RunwayData>>(StringComparer.OrdinalIgnoreCase);
+        var passthrough = new List<RunwayData>();
+
+        foreach (var runwayData in runwayDataList)
+        {
+            var key = GetPhysicalRunwayKey(runwayData.Identifier);
+            if (key == null)
+            {
+                passthrough.Add(runwayData);
+                continue;
+            }
+
+            if (!grouped.TryGetValue(key, out var group))
+            {
+                group = new List<RunwayData>();
+                grouped[key] = group;
+            }
+
+            group.Add(runwayData);
+        }
+
+        var displayRunways = new List<Runway>();
+
+        foreach (var group in grouped.Values)
+        {
+            var preMerged = group
+                .Where(r => (r.Identifier ?? string.Empty).Contains('/'))
+                .OrderByDescending(r => r.LengthFt)
+                .FirstOrDefault();
+            if (preMerged != null)
+            {
+                displayRunways.Add(MapRunway(preMerged));
+                continue;
+            }
+
+            if (group.Count < 2)
+            {
+                displayRunways.Add(MapRunway(group[0]));
+                continue;
+            }
+
+            RunwayData? bestPrimary = null;
+            RunwayData? bestReciprocal = null;
+            var bestDistanceNm = 0f;
+
+            foreach (var candidate in group)
+            {
+                var reciprocal = FindReciprocal(candidate, group);
+                if (reciprocal == null)
+                {
+                    continue;
+                }
+
+                var startPos = LatLonToNm(candidate.Latitude, candidate.Longitude, CenterLatitude, CenterLongitude);
+                var endPos = LatLonToNm(reciprocal.Latitude, reciprocal.Longitude, CenterLatitude, CenterLongitude);
+                var distanceNm = (endPos - startPos).Magnitude;
+                if (distanceNm < 0.2f || distanceNm > 10.0f)
+                {
+                    continue;
+                }
+
+                if (distanceNm > bestDistanceNm)
+                {
+                    bestDistanceNm = distanceNm;
+                    bestPrimary = candidate;
+                    bestReciprocal = reciprocal;
+                }
+            }
+
+            if (bestPrimary == null || bestReciprocal == null)
+            {
+                displayRunways.Add(MapRunway(group.OrderByDescending(r => r.LengthFt).First()));
+                continue;
+            }
+
+            var start = LatLonToNm(bestPrimary.Latitude, bestPrimary.Longitude, CenterLatitude, CenterLongitude);
+            var end = LatLonToNm(bestReciprocal.Latitude, bestReciprocal.Longitude, CenterLatitude, CenterLongitude);
+            var delta = end - start;
+            var bearingFromGeometry = (float)((Math.Atan2(delta.X, delta.Y) * 180.0 / Math.PI + 360.0) % 360.0);
+
+            var averageLengthFt = (int)Math.Round(group.Average(r => r.LengthFt));
+            var averageWidthFt = (int)Math.Round(group.Average(r => r.WidthFt));
+            var designator = $"{bestPrimary.Identifier}/{bestReciprocal.Identifier}";
+
+            displayRunways.Add(new Runway
+            {
+                Identifier = designator,
+                AirportIcaoCode = airportCode,
+                LengthFt = averageLengthFt,
+                WidthFt = averageWidthFt,
+                MagneticBearing = bearingFromGeometry,
+                ThresholdPositionNm = start,
+                EndPositionNm = end,
+                ThresholdElevationFt = airport?.AltitudeFt ?? 0
+            });
+        }
+
+        foreach (var runwayData in passthrough)
+        {
+            displayRunways.Add(MapRunway(runwayData));
+        }
+
+        // Final guard: ensure only one rendered runway per physical runway key.
+        return displayRunways
+            .GroupBy(r => GetPhysicalRunwayKey(r.Identifier) ?? r.Identifier, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(r => r.LengthFt).First())
+            .ToList();
+    }
+
+    private RunwayData? FindReciprocal(RunwayData source, List<RunwayData> candidates)
+    {
+        var expected = BuildReciprocalDesignator(source.Identifier);
+        if (expected == null)
+        {
+            return null;
+        }
+
+        return candidates
+            .Where(r =>
+            !ReferenceEquals(r, source) &&
+            NormalizeRunwayDesignator(r.Identifier) == expected)
+            .OrderBy(r => (LatLonToNm(source.Latitude, source.Longitude, CenterLatitude, CenterLongitude)
+                - LatLonToNm(r.Latitude, r.Longitude, CenterLatitude, CenterLongitude)).Magnitude)
+            .FirstOrDefault();
+    }
+
+    private static string? GetPhysicalRunwayKey(string? identifier)
+    {
+        if (!string.IsNullOrWhiteSpace(identifier) && identifier.Contains('/'))
+        {
+            var parts = identifier.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 2)
+            {
+                var a = NormalizeRunwayDesignator(parts[0]);
+                var b = NormalizeRunwayDesignator(parts[1]);
+                if (a != null && b != null)
+                {
+                    return string.CompareOrdinal(a, b) <= 0 ? $"{a}|{b}" : $"{b}|{a}";
+                }
+            }
+        }
+
+        var normalized = NormalizeRunwayDesignator(identifier);
+        if (normalized == null)
+        {
+            return null;
+        }
+
+        var reciprocal = BuildReciprocalDesignator(normalized);
+        if (reciprocal == null)
+        {
+            return null;
+        }
+
+        return string.CompareOrdinal(normalized, reciprocal) <= 0
+            ? $"{normalized}|{reciprocal}"
+            : $"{reciprocal}|{normalized}";
+    }
+
+    private static string? BuildReciprocalDesignator(string? identifier)
+    {
+        var normalized = NormalizeRunwayDesignator(identifier);
+        if (normalized == null)
+        {
+            return null;
+        }
+
+        var match = Regex.Match(normalized, @"^(?<num>\d{2})(?<side>[LRC]?)$");
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var num = int.Parse(match.Groups["num"].Value);
+        var side = match.Groups["side"].Value;
+        var reciprocalNum = ((num + 18 - 1) % 36) + 1;
+        var reciprocalSide = side switch
+        {
+            "L" => "R",
+            "R" => "L",
+            _ => side
+        };
+
+        return $"{reciprocalNum:00}{reciprocalSide}";
+    }
+
+    private static string? NormalizeRunwayDesignator(string? identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return null;
+        }
+
+        var token = identifier.Trim().ToUpperInvariant();
+        if (token.StartsWith("RW", StringComparison.Ordinal))
+        {
+            token = token[2..];
+        }
+
+        var match = Regex.Match(token, @"^(?<num>\d{1,2})(?<side>[LRC]?)$");
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var num = int.Parse(match.Groups["num"].Value);
+        if (num is < 1 or > 36)
+        {
+            return null;
+        }
+
+        var side = match.Groups["side"].Value;
+        return $"{num:00}{side}";
+    }
+
+    private Runway MapRunway(RunwayData runwayData)
+    {
+        var thresholdPositionNm = LatLonToNm(runwayData.Latitude, runwayData.Longitude, CenterLatitude, CenterLongitude);
+        var runwayLengthNm = (float)(runwayData.LengthFt / 6076.12);
+        var headingRad = (float)(runwayData.Heading * SimulationConstants.DegreesToRadians);
+
+        // runwayData latitude/longitude is treated as threshold; derive opposite end from heading and length.
+        var endPositionNm = new Vector2(
+            thresholdPositionNm.X + (float)(runwayLengthNm * Math.Sin(headingRad)),
+            thresholdPositionNm.Y + (float)(runwayLengthNm * Math.Cos(headingRad)));
+
+        return new Runway
+        {
+            Identifier = runwayData.Identifier,
+            AirportIcaoCode = airportCode,
+            LengthFt = (int)Math.Round(runwayData.LengthFt),
+            WidthFt = (int)Math.Round(runwayData.WidthFt),
+            MagneticBearing = (float)runwayData.Heading,
+            ThresholdPositionNm = thresholdPositionNm,
+            EndPositionNm = endPositionNm,
+            ThresholdElevationFt = airport?.AltitudeFt ?? 0
+        };
+    }
+
+    private AircraftModel MapAircraft(AircraftPosition aircraftPosition)
+    {
+        return new AircraftModel
+        {
+            Callsign = aircraftPosition.Callsign,
+            AircraftType = string.IsNullOrWhiteSpace(aircraftPosition.AircraftType) ? "UNK" : aircraftPosition.AircraftType,
+            PositionNm = LatLonToNm(aircraftPosition.Latitude, aircraftPosition.Longitude, CenterLatitude, CenterLongitude),
+            HeadingDegrees = (float)aircraftPosition.Heading,
+            SpeedKnots = (float)aircraftPosition.GroundSpeedKnots,
+            AltitudeFt = aircraftPosition.AltitudeFt,
+            VerticalSpeedFpm = (float)aircraftPosition.VerticalSpeedFpm,
+            IsArrival = true,
+            MinSpeedKnots = 160,
+            MaxSpeedKnots = 500,
+            Destination = airport
+        };
+    }
+
+    private static Vector2 LatLonToNm(double latitude, double longitude, double referenceLatitude, double referenceLongitude)
+    {
+        var latDiff = latitude - referenceLatitude;
+        var lonDiff = longitude - referenceLongitude;
+
+        var nmLat = latDiff * 60.0;
+        var nmLon = lonDiff * 60.0 * Math.Cos(referenceLatitude * Math.PI / 180.0);
+
+        return new Vector2((float)nmLon, (float)nmLat);
+    }
+
 }

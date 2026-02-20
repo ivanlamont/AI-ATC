@@ -16,15 +16,17 @@ main {
 .top-row {
     background-color: #001100;
     border-bottom: 1px solid #00cc00;
-    justify-content: flex-end;
+    justify-content: space-between;
     height: 3.5rem;
     display: flex;
     align-items: center;
+    gap: 0.75rem;
+    overflow-x: auto;
 }
 
     .top-row ::deep a, .top-row ::deep .btn-link {
         white-space: nowrap;
-        margin-left: 1.5rem;
+        margin-left: 0;
         text-decoration: none;
         color: #00cc00;
     }
@@ -34,14 +36,60 @@ main {
         color: #00ff00;
     }
 
-    .top-row ::deep a:first-child {
+    .top-row .toolbar-auth {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        min-width: max-content;
+    }
+
+    .top-row .auth-btn {
+        border: 1px solid #00aa00;
+        border-radius: 4px;
+        padding: 0.2rem 0.6rem;
+        color: #00dd00;
+        background: #002200;
+    }
+
+    .top-row .auth-btn:hover {
+        background: #003300;
+        text-decoration: none;
+    }
+
+    .top-row .user-pill {
+        border: 1px solid #008800;
+        border-radius: 999px;
+        padding: 0.2rem 0.7rem;
+        color: #00ff88;
+        background: #001a00;
+        font-size: 0.9rem;
+        max-width: 16rem;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
     }
+
+    .top-row .about-link {
+        flex: 0 0 auto;
+    }
+
+.login-error-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 1rem;
+    background: #2a0000;
+    color: #ffb3b3;
+    border-bottom: 1px solid #aa3333;
+}
 
 @media (max-width: 640.98px) {
     .top-row {
-        justify-content: space-between;
+        height: auto;
+        min-height: 3.5rem;
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
     }
 
     .top-row ::deep a, .top-row ::deep .btn-link {
@@ -65,12 +113,6 @@ main {
         position: sticky;
         top: 0;
         z-index: 1;
-    }
-
-    .top-row.auth ::deep a:first-child {
-        flex: 1;
-        text-align: right;
-        width: 0;
     }
 
     .top-row, article {

@@ -1,6 +1,25 @@
 {
     "version": "0.2.0",
+    "compounds": [
+        {
+            "name": "AI-ATC: Debug Web + Scenario Service",
+            "configurations": [
+                "AI-ATC: Debug Scenario Service",
+                "AI-ATC: Run Web App"
+            ]
+        }
+    ],
     "configurations": [
+        {
+            "name": "AI-ATC: Debug Scenario Service",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AIATC.ScenarioService/bin/Debug/net10.0/AIATC.ScenarioService.dll",
+            "cwd": "${workspaceFolder}/src/AIATC.ScenarioService",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+        },
         {
             "name": "AI-ATC: Debug Training (GPU)",
             "type": "python",
@@ -36,7 +55,7 @@
             "cwd": "${workspaceFolder}/src/AIATC.Web",
             "program": "${workspaceFolder}/src/AIATC.Web/bin/Debug/net10.0/AIATC.Web.dll",
             "launchBrowser": true,
-            "applicationUrl": "https://localhost:5001",
+            "applicationUrl": "http://localhost:5127",
             "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
             "browser": "chrome"
         }

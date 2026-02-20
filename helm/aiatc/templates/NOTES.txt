@@ -1,0 +1,87 @@
+AI-ATC has been deployed successfully!
+
+📊 Deployment Summary:
+==========================================
+
+Web Application:
+  Replicas: {{ .Values.web.replicaCount }}
+  Service: {{ include "aiatc.fullname" . }}-web
+  Type: {{ .Values.web.service.type }}
+  {{- if eq .Values.web.service.type "LoadBalancer" }}
+
+  Get the application URL by running:
+    export SERVICE_IP=$(kubectl get svc {{ include "aiatc.fullname" . }}-web -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    echo "http://$SERVICE_IP:{{ .Values.web.service.port }}"
+  {{- end }}
+
+Scenario Service (gRPC):
+  Replicas: {{ .Values.scenarioService.replicaCount }}
+  Service: {{ include "aiatc.fullname" . }}-scenario-service
+  Type: {{ .Values.scenarioService.service.type }}
+  gRPC Port: {{ .Values.scenarioService.service.grpcPort }}
+
+Databases:
+  Usage DB: {{ .Release.Name }}-postgresql (PostgreSQL)
+  Reference DB: {{ .Values.externalReferenceDb.host }}:{{ .Values.externalReferenceDb.port }}
+
+Redis State Store:
+  Service: {{ .Release.Name }}-redis-master
+
+{{- if .Values.dapr.enabled }}
+
+Dapr Configuration:
+  Enabled: ✅
+  Version: {{ .Values.dapr.version }}
+  State Store: Redis
+  Pub/Sub: Redis
+{{- end }}
+
+🔍 Useful Commands:
+==========================================
+
+View pods:
+  kubectl get pods -n {{ .Release.Namespace }}
+
+View services:
+  kubectl get svc -n {{ .Release.Namespace }}
+
+View Dapr components:
+  kubectl get components -n {{ .Release.Namespace }}
+
+Check scenario service logs:
+  kubectl logs -l app.kubernetes.io/component=scenario-service -n {{ .Release.Namespace }} -c scenario-service
+
+Check web service logs:
+  kubectl logs -l app.kubernetes.io/component=web -n {{ .Release.Namespace }} -c web
+
+Test scenario service health:
+  kubectl port-forward svc/{{ include "aiatc.fullname" . }}-scenario-service {{ .Values.scenarioService.service.grpcPort }}:{{ .Values.scenarioService.service.grpcPort }} -n {{ .Release.Namespace }}
+  curl http://localhost:{{ .Values.scenarioService.service.grpcPort }}/health
+
+⚠️  Important Notes:
+==========================================
+
+1. External Reference Database:
+   Ensure the external ARINC 424 reference database is accessible at:
+   {{ .Values.externalReferenceDb.host }}:{{ .Values.externalReferenceDb.port }}
+
+2. FlightAware API:
+   Configure FlightAware API key in values.yaml:
+   flightAware.apiKey: "your-api-key-here"
+
+3. Dapr:
+   Ensure Dapr control plane is installed in your cluster:
+   kubectl get pods -n dapr-system
+
+4. Database Migrations:
+   Scenario usage database migrations run automatically on startup.
+
+📚 Documentation:
+==========================================
+
+For more information, visit:
+  - Helm Chart: ./helm/aiatc/README.md
+  - Docker Compose: ./docker-compose.yml
+  - Architecture: ./REPOSITORY_INDEX.md
+
+Happy simulating! ✈️

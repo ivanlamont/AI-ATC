@@ -11,11 +11,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 using Tensorflow;
 using static Tensorflow.Binding;
 using NumSharp;
 using AIATC.Common;
+using Serilog;
 
 namespace AIATC.ML.Services
 {
@@ -24,7 +24,6 @@ namespace AIATC.ML.Services
     /// </summary>
     public class TensorFlowModelService : IDisposable
     {
-        private readonly ILogger<TensorFlowModelService> _logger;
         private readonly ModelConfiguration _config;
         private Graph? _graph;
         private Session? _session;
@@ -39,10 +38,9 @@ namespace AIATC.ML.Services
         private List<long> _inferenceTimes = new List<long>();
         private const int MaxInferenceTimeHistory = 100;
 
-        public TensorFlowModelService(ModelConfiguration config, ILogger<TensorFlowModelService> logger)
+        public TensorFlowModelService(ModelConfiguration config)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -63,13 +61,13 @@ namespace AIATC.ML.Services
             {
                 if (!File.Exists(modelPath))
                 {
-                    _logger.LogError($"Model file not found: {modelPath}");
+                    Log.Error($"Model file not found: {modelPath}");
                     return false;
                 }
 
                 try
                 {
-                    _logger.LogInformation($"Loading model from {modelPath}");
+                    Log.Information($"Loading model from {modelPath}");
 
                     // Dispose existing session
                     _session?.Dispose();
@@ -88,12 +86,12 @@ namespace AIATC.ML.Services
                     IsModelLoaded = true;
                     _lastModelLoadTime = DateTime.UtcNow;
 
-                    _logger.LogInformation($"Model loaded successfully from {modelPath}");
+                    Log.Information($"Model loaded successfully from {modelPath}");
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError($"Error loading model: {ex.Message}");
+                    Log.Error($"Error loading model: {ex.Message}");
                     IsModelLoaded = false;
                     return false;
                 }
@@ -139,13 +137,13 @@ namespace AIATC.ML.Services
                 var inferenceMs = (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
                 TrackInferenceTime(inferenceMs);
 
-                _logger.LogDebug($"Inference completed in {inferenceMs}ms");
+                Log.Debug($"Inference completed in {inferenceMs}ms");
 
                 return action;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error during inference: {ex.Message}");
+                Log.Error($"Error during inference: {ex.Message}");
                 // Return neutral action on error
                 return GetNeutralAction(observation);
             }
@@ -321,15 +319,15 @@ namespace AIATC.ML.Services
         /// </summary>
         public bool HotSwapModel(string newModelPath)
         {
-            _logger.LogInformation($"Attempting hot-swap to model: {newModelPath}");
+            Log.Information($"Attempting hot-swap to model: {newModelPath}");
 
             if (LoadModel(newModelPath))
             {
-                _logger.LogInformation($"Hot-swap successful");
+                Log.Information($"Hot-swap successful");
                 return true;
             }
 
-            _logger.LogError($"Hot-swap failed, keeping previous model");
+            Log.Error($"Hot-swap failed, keeping previous model");
             return false;
         }
 
@@ -348,7 +346,7 @@ namespace AIATC.ML.Services
             // 2. Get the signature for inference
             // 3. Set up input/output tensors
 
-            _logger.LogInformation($"Loading SavedModel from: {modelPath}");
+            Log.Information($"Loading SavedModel from: {modelPath}");
         }
 
         public void Dispose()

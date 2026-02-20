@@ -6,7 +6,21 @@
       "Bash(ls:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(~/.dotnet/tools/dotnet-ef migrations add:*)",
+      "Bash(find:*)",
+      "Bash(tee:*)",
+      "Bash(~/.dotnet/tools/dotnet-ef.exe migrations add:*)",
+      "Bash(pwsh -File scripts/verify-deployment.ps1 -SkipDocker)",
+      "Bash(docker info:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(nc:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)"
     ]
   }
 }

@@ -10,10 +10,26 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.2" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.2" PrivateAssets="all" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+    <PackageReference Include="Grpc.Net.Client.Web" Version="2.76.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.29.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.76.0" PrivateAssets="all" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.BrowserConsole" Version="2.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AIATC.Domain\AIATC.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\AIATC.ScenarioService\Protos\scenario_service.proto" GrpcServices="Client" />
+  </ItemGroup>
+
+  <!-- Include appsettings files as static web assets -->
+  <ItemGroup>
+    <StaticAssets Include="wwwroot\appsettings.json" />
+    <StaticAssets Include="wwwroot\appsettings.Development.json" />
   </ItemGroup>
 
 </Project>

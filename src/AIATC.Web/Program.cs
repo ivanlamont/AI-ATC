@@ -4,27 +4,51 @@ using AIATC.Web;
 using AIATC.Web.Services;
 using AIATC.Domain.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Serilog;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.BrowserConsole()
+    .CreateLogger();
 
-// Register domain services
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+var environment = builder.HostEnvironment.Environment;
+
+builder.Configuration
+    .AddJsonFile("wwwroot/appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"wwwroot/appsettings.{environment}.json", optional: true, reloadOnChange: true);
+
+builder.Services.AddSingleton(builder.Configuration);
+
+// Domain services
 builder.Services.AddScoped<AIAgentService>();
 builder.Services.AddScoped<ChallengeModeService>();
 
-// Register web services
+// Web services
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<IAuthService>(sp => sp.GetRequiredService<AuthService>());
 builder.Services.AddScoped<SpeechRecognitionService>();
 builder.Services.AddScoped<TextToSpeechService>();
 builder.Services.AddScoped<AviationVocabularyService>();
+builder.Services.AddScoped<IFlightAwareService, FlightAwareService>();
 
-// Register Azure services
+// ScenarioService gRPC client
+builder.Services.AddScoped<IScenarioServiceClient, ScenarioServiceClient>();
+
+// Azure services
 builder.Services.AddScoped<IAzureConfigurationService, AzureConfigurationService>();
 builder.Services.AddScoped<IAzureSpeechService, AzureSpeechService>();
 
-// Register navigation service
+// Navigation service
 builder.Services.AddScoped<INavigationService, NavigationService>();
 
-await builder.Build().RunAsync();
+// Airport data service
+builder.Services.AddScoped<IAirportDataService, AirportDataService>();
+
+var host = builder.Build();
+await host.RunAsync();

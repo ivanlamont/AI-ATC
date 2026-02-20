@@ -1,10 +1,10 @@
 @page "/communication"
 @using AIATC.Web.Services
 @using AIATC.Domain.Models
+@using Serilog
 @inject IAzureSpeechService SpeechService
 @inject IAzureConfigurationService ConfigService
 @inject IJSRuntime JSRuntime
-@inject ILogger<ATCCommunicationHub> Logger
 @implements IDisposable
 
 <div class="atc-communication-container">
@@ -143,11 +143,12 @@
             
             <div class="config-form">
                 <div class="form-group">
-                    <label>Azure Speech Subscription Key:</label>
-                    <input type="password" @bind="tempConfig.SpeechSubscriptionKey" class="form-control" 
-                           placeholder="Enter your Azure Speech key..." />
+                    <p class="text-muted small">
+                        The Azure Speech subscription key is managed server-side by AIATC.BFF
+                        and is never exposed to the browser.
+                    </p>
                 </div>
-                
+
                 <div class="form-group">
                     <label>Azure Region:</label>
                     <select @bind="tempConfig.SpeechRegion" class="form-select">
@@ -220,7 +221,6 @@
         currentConfig = await ConfigService.LoadConfigurationAsync();
         tempConfig = new AzureConfiguration
         {
-            SpeechSubscriptionKey = currentConfig.SpeechSubscriptionKey,
             SpeechRegion = currentConfig.SpeechRegion,
             UseAviationPhoneology = currentConfig.UseAviationPhoneology
         };
@@ -276,7 +276,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error toggling recognition");
+            Log.Error(ex, "Error toggling recognition");
             LogCommunication(CommunicationLogType.Error, "System", $"Recognition error: {ex.Message}");
         }
         
@@ -305,7 +305,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error during text-to-speech");
+            Log.Error(ex, "Error during text-to-speech");
             LogCommunication(CommunicationLogType.Error, "System", $"TTS error: {ex.Message}");
         }
         
@@ -327,7 +327,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error stopping speech");
+            Log.Error(ex, "Error stopping speech");
         }
     }
 
@@ -347,7 +347,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error testing microphone");
+            Log.Error(ex, "Error testing microphone");
             LogCommunication(CommunicationLogType.Error, "System", $"Microphone test failed: {ex.Message}");
         }
     }
@@ -356,21 +356,20 @@
     {
         try
         {
-            currentConfig.SpeechSubscriptionKey = tempConfig.SpeechSubscriptionKey;
             currentConfig.SpeechRegion = tempConfig.SpeechRegion;
             currentConfig.UseAviationPhoneology = tempConfig.UseAviationPhoneology;
-            
+
             await ConfigService.SaveConfigurationAsync(currentConfig);
-            
-            // Reinitialize services with new configuration
-            isAzureAvailable = await SpeechService.InitializeAsync(currentConfig.SpeechSubscriptionKey, currentConfig.SpeechRegion);
+
+            // Reinitialize — key is held server-side; BFF will issue a fresh token
+            isAzureAvailable = await SpeechService.InitializeAsync();
             
             LogCommunication(CommunicationLogType.System, "System", "Configuration saved and services reinitialized");
             showConfiguration = false;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error saving configuration");
+            Log.Error(ex, "Error saving configuration");
             LogCommunication(CommunicationLogType.Error, "System", $"Configuration error: {ex.Message}");
         }
         
@@ -388,31 +387,24 @@
             var testTTS = new TextToSpeechService(jsRuntime);
             
             // Create a compatible logger
-            var loggerFactory = new LoggerFactory();
-            var azureLogger = loggerFactory.CreateLogger<AzureSpeechService>();
-            var vocabLogger = loggerFactory.CreateLogger<AviationVocabularyService>();
-            
             // Create vocabulary service for testing
-            var testVocabularyService = new AviationVocabularyService(httpClient, vocabLogger);
+            var testVocabularyService = new AviationVocabularyService(httpClient);
             
             var testService = new AzureSpeechService(
                 httpClient, 
-                azureLogger, 
                 testRecognition, 
                 testTTS,
                 testVocabularyService);
                 
-            var success = await testService.InitializeAsync(tempConfig.SpeechSubscriptionKey, tempConfig.SpeechRegion);
+            var success = await testService.InitializeAsync();
             
             LogCommunication(CommunicationLogType.System, "System", 
                 success ? "Azure connection test successful" : "Azure connection test failed");
                 
-            // Dispose the temporary logger factory
-            loggerFactory.Dispose();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error testing configuration");
+            Log.Error(ex, "Error testing configuration");
             LogCommunication(CommunicationLogType.Error, "System", $"Test failed: {ex.Message}");
         }
     }
@@ -427,7 +419,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error playing audio data");
+            Log.Error(ex, "Error playing audio data");
         }
     }
 

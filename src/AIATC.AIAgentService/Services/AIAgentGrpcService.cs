@@ -10,9 +10,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Grpc.Core;
-using Microsoft.Extensions.Logging;
 using AIATC.ML.Services;
 using AIATC.Common;
+using Serilog;
 
 
 namespace AIATC.ML.Services
@@ -24,7 +24,6 @@ namespace AIATC.ML.Services
     public class AIAgentGrpcService
     {
         private readonly TensorFlowModelService _modelService;
-        private readonly ILogger<AIAgentGrpcService> _logger;
         private Server? _server;
         private readonly int _port;
 
@@ -33,11 +32,9 @@ namespace AIATC.ML.Services
 
         public AIAgentGrpcService(
             TensorFlowModelService modelService,
-            ILogger<AIAgentGrpcService> logger,
             int port = 50051)
         {
             _modelService = modelService ?? throw new ArgumentNullException(nameof(modelService));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _port = port;
         }
 
@@ -61,11 +58,11 @@ namespace AIATC.ML.Services
                     await Task.CompletedTask; // For async compatibility
                     IsRunning = true;
 
-                    _logger.LogInformation($"AI Agent gRPC service started on port {_port}");
+                    Log.Information($"AI Agent gRPC service started on port {_port}");
                 }
                 else
                 {
-                    _logger.LogWarning("Service definition is null, starting server without services for testing");
+                    Log.Warning("Service definition is null, starting server without services for testing");
                     _server = new Server
                     {
                         Ports = { new ServerPort("localhost", _port, ServerCredentials.Insecure) }
@@ -76,7 +73,7 @@ namespace AIATC.ML.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error starting gRPC server: {ex.Message}");
+                Log.Error($"Error starting gRPC server: {ex.Message}");
                 throw;
             }
         }
@@ -92,11 +89,11 @@ namespace AIATC.ML.Services
             {
                 await _server.ShutdownAsync();
                 IsRunning = false;
-                _logger.LogInformation("AI Agent gRPC service stopped");
+                Log.Information("AI Agent gRPC service stopped");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error stopping gRPC server: {ex.Message}");
+                Log.Error($"Error stopping gRPC server: {ex.Message}");
             }
         }
 
@@ -134,7 +131,7 @@ namespace AIATC.ML.Services
                 // Generate ATC command from action
                 var command = GenerateATCCommand(mlAction, observation);
 
-                _logger.LogDebug($"Inference completed: {command} (confidence: {mlAction.Confidence:F2})");
+                Log.Debug($"Inference completed: {command} (confidence: {mlAction.Confidence:F2})");
 
                 return new ActionMessage
                 {
@@ -148,7 +145,7 @@ namespace AIATC.ML.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error during inference: {ex.Message}");
+                Log.Error($"Error during inference: {ex.Message}");
 
                 // Return error response
                 return new ActionMessage
@@ -254,16 +251,11 @@ namespace AIATC.ML.Services
     {
         private readonly string _host;
         private readonly int _port;
-        private readonly ILogger<AIAgentGrpcClient> _logger;
 
-        public AIAgentGrpcClient(
-            string host,
-            int port,
-            ILogger<AIAgentGrpcClient> logger)
+        public AIAgentGrpcClient(string host, int port)
         {
             _host = host ?? "localhost";
             _port = port;
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -277,11 +269,11 @@ namespace AIATC.ML.Services
                 var connectTask = channel.ConnectAsync();
                 if (await Task.WhenAny(connectTask, Task.Delay(5000)) == connectTask)
                 {
-                    _logger.LogDebug($"Connected to AI Agent service at {_host}:{_port}");
+                    Log.Debug($"Connected to AI Agent service at {_host}:{_port}");
                 }
                 else
                 {
-                    _logger.LogWarning($"Connection timeout to {_host}:{_port}");
+                    Log.Warning($"Connection timeout to {_host}:{_port}");
                 }
 
                 // In a real implementation, would call the gRPC stub here
@@ -292,7 +284,7 @@ namespace AIATC.ML.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error calling remote inference service: {ex.Message}");
+                Log.Error($"Error calling remote inference service: {ex.Message}");
                 throw;
             }
         }

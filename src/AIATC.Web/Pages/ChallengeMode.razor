@@ -4,9 +4,9 @@
 @using AIATC.Domain.Models.Scenarios
 @using AIATC.Common
 @using System.Timers
+@using Serilog
 
 @inject ChallengeModeService ChallengeService
-@inject ILogger<ChallengeMode> Logger
 
 <div class="challenge-container">
     <!-- Header -->
@@ -283,7 +283,7 @@
             }
             else
             {
-                Logger.LogWarning("No aircraft selected");
+                Log.Warning("No aircraft selected");
             }
         }
     }

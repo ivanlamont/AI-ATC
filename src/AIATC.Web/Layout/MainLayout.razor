@@ -1,6 +1,9 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
 
 @inject IJSRuntime JSRuntime
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
 
 <div class="page">
     <div class="sidebar">
@@ -9,8 +12,28 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="#" @onclick="ShowAboutModal" @onclick:preventDefault>About</a>
+            <div class="toolbar-auth">
+                @if (!AuthService.IsAuthenticated)
+                {
+                    <button class="btn-link auth-btn" @onclick="LoginAzure">Login Azure</button>
+                    <button class="btn-link auth-btn" @onclick="LoginGoogle">Login Google</button>
+                }
+                else
+                {
+                    <span class="user-pill">@(AuthService.CurrentUser?.DisplayName ?? "User")</span>
+                    <button class="btn-link auth-btn" @onclick="OpenScenarios">Scenarios</button>
+                    <button class="btn-link auth-btn" @onclick="Logout">Log Out</button>
+                }
+            </div>
+            <a class="about-link" href="#" @onclick="ShowAboutModal" @onclick:preventDefault>About</a>
         </div>
+        @if (!string.IsNullOrWhiteSpace(loginError))
+        {
+            <div class="login-error-panel">
+                <span>Login failed: @loginError</span>
+                <button class="btn-link auth-btn" @onclick="DismissLoginError">Dismiss</button>
+            </div>
+        }
 
         <article class="content px-4">
             @Body
@@ -39,6 +62,13 @@
 
 @code {
     private bool ShowAbout { get; set; } = false;
+    private string? loginError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthService.AuthStateChanged += HandleAuthStateChanged;
+        await AuthService.InitializeAsync();
+    }
 
     private void ShowAboutModal()
     {
@@ -50,5 +80,44 @@
     {
         ShowAbout = false;
         StateHasChanged();
+    }
+
+    private async Task LoginAzure() => await RunLogin(async () => await AuthService.LoginWithAzureAsync());
+    private async Task LoginGoogle() => await RunLogin(async () => await AuthService.LoginWithGoogleAsync());
+    private async Task Logout() => await AuthService.LogoutAsync();
+    private void OpenScenarios() => NavigationManager.NavigateTo("/?openScenarios=1");
+
+    private async Task RunLogin(Func<Task> loginAction)
+    {
+        try
+        {
+            loginError = null;
+            await loginAction();
+        }
+        catch (Exception ex)
+        {
+            loginError = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    private void DismissLoginError()
+    {
+        loginError = null;
+    }
+
+    private void HandleAuthStateChanged()
+    {
+        if (AuthService.IsAuthenticated)
+        {
+            loginError = null;
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AuthService.AuthStateChanged -= HandleAuthStateChanged;
     }
 }

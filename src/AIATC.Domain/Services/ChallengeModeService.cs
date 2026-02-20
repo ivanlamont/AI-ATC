@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 using AIATC.Domain.Models;
 using AIATC.Domain.Models.Scenarios;
 using AIATC.Domain.Models.Scoring;
-using Microsoft.Extensions.Logging;
 using AIATC.Common;
+using Serilog;
 
 namespace AIATC.Domain.Services
 {
@@ -21,7 +21,6 @@ namespace AIATC.Domain.Services
     /// </summary>
     public class ChallengeModeService
     {
-        private readonly ILogger<ChallengeModeService> _logger;
         private readonly SimulationEngine _userSimulation;
         private readonly SimulationEngine _aiSimulation;
         private readonly AIAgentService _aiAgent;
@@ -54,12 +53,9 @@ namespace AIATC.Domain.Services
         public event EventHandler<SeparationViolationEventArgs> OnSeparationViolation;
         public event EventHandler<AircraftLandedEventArgs> OnAircraftLanded;
 
-        public ChallengeModeService(
-            AIAgentService aiAgent,
-            ILogger<ChallengeModeService> logger)
+        public ChallengeModeService(AIAgentService aiAgent)
         {
             _aiAgent = aiAgent ?? throw new ArgumentNullException(nameof(aiAgent));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             _userSimulation = new SimulationEngine();
             _aiSimulation = new SimulationEngine();
@@ -80,7 +76,7 @@ namespace AIATC.Domain.Services
         {
             try
             {
-                _logger.LogInformation($"Initializing challenge mode for scenario {scenarioId}");
+                Log.Information($"Initializing challenge mode for scenario {scenarioId}");
 
                 ScenarioId = scenarioId;
                 Difficulty = difficulty;
@@ -90,7 +86,7 @@ namespace AIATC.Domain.Services
                 var scenario = _userSimulation.ScenarioService.GetScenario(scenarioId);
                 if (scenario == null)
                 {
-                    _logger.LogError($"Scenario {scenarioId} not found");
+                    Log.Error($"Scenario {scenarioId} not found");
                     return false;
                 }
 
@@ -114,12 +110,12 @@ namespace AIATC.Domain.Services
                 State = ChallengeState.Ready;
                 IsActive = false;
 
-                _logger.LogInformation($"Challenge {ChallengeId} initialized successfully");
+                Log.Information($"Challenge {ChallengeId} initialized successfully");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error initializing challenge: {ex.Message}");
+                Log.Error($"Error initializing challenge: {ex.Message}");
                 return false;
             }
         }
@@ -131,7 +127,7 @@ namespace AIATC.Domain.Services
         {
             if (State != ChallengeState.Ready)
             {
-                _logger.LogWarning($"Cannot start challenge in state {State}");
+                Log.Warning($"Cannot start challenge in state {State}");
                 return;
             }
 
@@ -141,7 +137,7 @@ namespace AIATC.Domain.Services
             SimulationTimeSeconds = 0;
             RealTimeSeconds = 0;
 
-            _logger.LogInformation($"Challenge {ChallengeId} started");
+            Log.Information($"Challenge {ChallengeId} started");
             OnStateChanged?.Invoke(this, new ChallengeStateChangedEventArgs(State));
         }
 
@@ -215,7 +211,7 @@ namespace AIATC.Domain.Services
             // Apply command to user's simulation
             ApplyCommandToAircraft(targetAircraft, commandText);
 
-            _logger.LogDebug($"User command: {commandText} → {command.TargetCallsign}");
+            Log.Debug($"User command: {commandText} → {command.TargetCallsign}");
         }
 
         /// <summary>
@@ -243,7 +239,7 @@ namespace AIATC.Domain.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error getting AI command: {ex.Message}");
+                Log.Error($"Error getting AI command: {ex.Message}");
                 return null;
             }
         }
@@ -286,7 +282,7 @@ namespace AIATC.Domain.Services
                         AiCommandHistory.Add(challengeCommand);
                         ApplyCommandToAircraft(aircraft, result.Command);
 
-                        _logger.LogDebug($"AI command: {result.Command} → {aircraft.Callsign} (confidence: {result.Confidence:P})");
+                        Log.Debug($"AI command: {result.Command} → {aircraft.Callsign} (confidence: {result.Confidence:P})");
                     }
                 }
             }
@@ -325,7 +321,7 @@ namespace AIATC.Domain.Services
 
                 var result = DetermineWinner();
 
-                _logger.LogInformation($"Challenge {ChallengeId} completed. Winner: {result.Winner}");
+                Log.Information($"Challenge {ChallengeId} completed. Winner: {result.Winner}");
                 OnStateChanged?.Invoke(this, new ChallengeStateChangedEventArgs(State));
             }
         }

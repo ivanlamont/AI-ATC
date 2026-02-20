@@ -1,41 +1,97 @@
+using AIATC.ReferenceData.Context;
+using AIATC.ScenarioService.Data;
+using AIATC.ScenarioService.Services;
+using Microsoft.EntityFrameworkCore;
+using Serilog;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+var environment = builder.Environment;
+
+// Load configuration from appsettings.json (already loaded by CreateDefault, but ensuring it's there)
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    ;
+
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .CreateLogger();
+builder.Host.UseSerilog();
+
+// Register configuration as a singleton so services can use it
+builder.Services.AddSingleton(builder.Configuration);
+
+// Add gRPC with gRPC-Web support for browser clients
+builder.Services.AddGrpc();
+
+// Add CORS for gRPC-Web browser clients
+builder.Services.AddCors();
+builder.Services.AddMemoryCache();
+
+// Add Dapr (if needed for service discovery)
+// builder.Services.AddDaprClient();
+
+// Add database contexts
+builder.Services.AddDbContext<AirspaceReferenceDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("AirspaceDb")));
+
+builder.Services.AddDbContext<ScenarioUsageDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("ScenarioUsageDb")));
+
+// Add HttpClient for FlightAware service
+builder.Services.AddHttpClient<IFlightAwareService, FlightAwareService>();
+
+// Configure FlightAware options
+builder.Services.Configure<FlightAwareOptions>(
+    builder.Configuration.GetSection("FlightAware"));
+
+// Add health checks
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AirspaceReferenceDbContext>("airspace_db")
+    .AddDbContextCheck<ScenarioUsageDbContext>("usage_db");
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// Apply migrations
+using (var scope = app.Services.CreateScope())
 {
-    app.MapOpenApi();
+    try
+    {
+        var usageDb = scope.ServiceProvider.GetRequiredService<ScenarioUsageDbContext>();
+        await usageDb.Database.MigrateAsync();
+        Log.Information("Database migrations applied successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error applying database migrations");
+    }
 }
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
+// Configure the HTTP request pipeline
+// Enable CORS for gRPC-Web
+app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
+app.UseCors(policy =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    policy.AllowAnyOrigin()
+          .AllowAnyMethod()
+          .AllowAnyHeader()
+          .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding");
+});
 
-app.MapGet("/weatherforecast", () =>
+app.MapGrpcService<ScenarioServiceImpl>().EnableGrpcWeb();
+app.MapHealthChecks("/health");
+
+app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
+
+try
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
-app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+    Log.Information("Starting AIATC.ScenarioService");
+    app.Run();
+}
+finally
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    Log.CloseAndFlush();
 }

@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+option csharp_namespace = "AIATC.ScenarioService.Protos";
+
+package aiatc.scenario;
+
+// Main scenario service
+service ScenarioService {
+  // Scenario Discovery
+  rpc ListScenarios (ListScenariosRequest) returns (ListScenariosResponse);
+  rpc GetScenario (GetScenarioRequest) returns (ScenarioResponse);
+  rpc SearchScenarios (SearchScenariosRequest) returns (ListScenariosResponse);
+
+  // Scenario Lifecycle
+  rpc StartScenario (StartScenarioRequest) returns (ScenarioSessionResponse);
+  rpc SaveProgress (SaveProgressRequest) returns (SaveProgressResponse);
+  rpc SaveScenarioState (SaveScenarioStateRequest) returns (SaveProgressResponse);
+  rpc LoadProgress (LoadProgressRequest) returns (ScenarioSessionResponse);
+  rpc CompleteScenario (CompleteScenarioRequest) returns (ScenarioResultResponse);
+
+  // Airspace Data (from reference database)
+  rpc GetAirportData (GetAirportRequest) returns (AirportDataResponse);
+  rpc GetProcedures (GetProceduresRequest) returns (ProceduresResponse);
+  rpc GetAirways (GetAirwaysRequest) returns (AirwaysResponse);
+
+  // Live Flight Data (FlightAware integration)
+  rpc GetInitialAircraftPositions (GetInitialAircraftRequest) returns (InitialAircraftResponse);
+  rpc GetLiveFlights (GetLiveFlightsRequest) returns (LiveFlightsResponse);
+
+  // Leaderboards
+  rpc GetLeaderboard (GetLeaderboardRequest) returns (LeaderboardResponse);
+  rpc SubmitScore (SubmitScoreRequest) returns (SubmitScoreResponse);
+
+  // Health
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Scenario Discovery Messages
+message ListScenariosRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string airport_code = 3;
+  string difficulty = 4;
+}
+
+message SearchScenariosRequest {
+  string query = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message GetScenarioRequest {
+  string scenario_id = 1;
+}
+
+message ScenarioResponse {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string airport_code = 4;
+  string difficulty = 5;
+  int32 duration_minutes = 6;
+  string configuration = 7;
+  string objectives = 8;
+}
+
+message ListScenariosResponse {
+  repeated ScenarioResponse scenarios = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+// Scenario Lifecycle Messages
+message StartScenarioRequest {
+  string scenario_id = 1;
+  string user_id = 2;
+}
+
+message ScenarioSessionResponse {
+  string session_id = 1;
+  string scenario_id = 2;
+  AirportDataResponse airport_data = 3;
+  repeated AircraftPosition initial_aircraft = 4;
+  string initial_state = 5;
+}
+
+message SaveProgressRequest {
+  string session_id = 1;
+  string saved_state = 2;
+  string save_name = 3;
+  double progress_percentage = 4;
+}
+
+message SaveScenarioStateRequest {
+  string user_id = 1;
+  string airport_code = 2;
+  string saved_state = 3;
+  string save_name = 4;
+  double progress_percentage = 5;
+  string scenario_id = 6;
+}
+
+message SaveProgressResponse {
+  string saved_scenario_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+message LoadProgressRequest {
+  string saved_scenario_id = 1;
+}
+
+message CompleteScenarioRequest {
+  string session_id = 1;
+  int32 score = 2;
+  string metrics = 3;
+}
+
+message ScenarioResultResponse {
+  bool success = 1;
+  int32 score = 2;
+  int32 rank = 3;
+  string message = 4;
+}
+
+// Airspace Data Messages
+message GetAirportRequest {
+  string airport_code = 1;
+}
+
+message AirportDataResponse {
+  string icao_code = 1;
+  string name = 2;
+  double latitude = 3;
+  double longitude = 4;
+  int32 elevation_ft = 5;
+  repeated RunwayData runways = 6;
+}
+
+message RunwayData {
+  string identifier = 1;
+  double length_ft = 2;
+  double width_ft = 3;
+  double heading = 4;
+  double latitude = 5;
+  double longitude = 6;
+}
+
+message GetProceduresRequest {
+  string airport_code = 1;
+  string procedure_type = 2;
+}
+
+message ProceduresResponse {
+  repeated ProcedureData procedures = 1;
+}
+
+message ProcedureData {
+  string identifier = 1;
+  string type = 2;
+  string runway_identifier = 3;
+  repeated WaypointData waypoints = 4;
+}
+
+message WaypointData {
+  string identifier = 1;
+  double latitude = 2;
+  double longitude = 3;
+  int32 altitude_ft = 4;
+  double speed_knots = 5;
+}
+
+message GetAirwaysRequest {
+  string airway_identifier = 1;
+  string region = 2;
+}
+
+message AirwaysResponse {
+  repeated AirwayData airways = 1;
+}
+
+message AirwayData {
+  string identifier = 1;
+  repeated WaypointData waypoints = 2;
+}
+
+// Live Flight Data Messages
+message GetInitialAircraftRequest {
+  string airport_code = 1;
+  float radius_nm = 2;
+}
+
+message InitialAircraftResponse {
+  repeated AircraftPosition aircraft = 1;
+}
+
+message GetLiveFlightsRequest {
+  string airport_code = 1;
+  float radius_nm = 2;
+}
+
+message LiveFlightsResponse {
+  repeated AircraftPosition aircraft = 1;
+}
+
+message AircraftPosition {
+  string callsign = 1;
+  string aircraft_type = 2;
+  double latitude = 3;
+  double longitude = 4;
+  int32 altitude_ft = 5;
+  double heading = 6;
+  double ground_speed_knots = 7;
+  double vertical_speed_fpm = 8;
+  string origin = 9;
+  string destination = 10;
+}
+
+// Leaderboard Messages
+message GetLeaderboardRequest {
+  string scenario_id = 1;
+  int32 limit = 2;
+}
+
+message LeaderboardResponse {
+  repeated LeaderboardEntry entries = 1;
+}
+
+message LeaderboardEntry {
+  int32 rank = 1;
+  string user_name = 2;
+  int32 score = 3;
+  int32 duration_seconds = 4;
+  string completed_at = 5;
+}
+
+message SubmitScoreRequest {
+  string session_id = 1;
+  string user_id = 2;
+  int32 score = 3;
+  int32 duration_seconds = 4;
+}
+
+message SubmitScoreResponse {
+  bool success = 1;
+  int32 rank = 2;
+  string message = 3;
+}
+
+// Health Check Messages
+message HealthCheckRequest {
+}
+
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+}

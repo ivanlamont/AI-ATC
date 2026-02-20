@@ -3,8 +3,16 @@ using Microsoft.AspNetCore.OpenApi;
 using AIATC.Data;
 using AIATC.Data.Repositories;
 using AIATC.Data.Seeding;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .CreateLogger();
+builder.Host.UseSerilog();
 
 // Add services to the container
 builder.Services.AddControllers();
@@ -80,4 +88,12 @@ using (var scope = app.Services.CreateScope())
     await seeder.SeedAsync();
 }
 
-app.Run();
+try
+{
+    Log.Information("Starting AIATC.WorldDataService");
+    app.Run();
+}
+finally
+{
+    Log.CloseAndFlush();
+}

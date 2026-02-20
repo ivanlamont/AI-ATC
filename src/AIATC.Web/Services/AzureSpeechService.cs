@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Serilog;
 
 namespace AIATC.Web.Services;
 
@@ -61,17 +62,18 @@ public interface IAzureSpeechService
 public class AzureSpeechService : IAzureSpeechService
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogger<AzureSpeechService> _logger;
     private readonly SpeechRecognitionService _fallbackRecognition;
     private readonly TextToSpeechService _fallbackTTS;
     private readonly AviationVocabularyService _vocabularyService;
-    
-    private string? _subscriptionKey;
+
+    private string? _speechToken;
     private string? _region;
+    private DateTimeOffset _tokenFetchedAt = DateTimeOffset.MinValue;
+    private static readonly TimeSpan TokenRefreshInterval = TimeSpan.FromMinutes(9);
     private bool _isAzureInitialized;
     private bool _isListening;
 
-    public bool IsAzureAvailable => !string.IsNullOrEmpty(_subscriptionKey) && _isAzureInitialized;
+    public bool IsAzureAvailable => !string.IsNullOrEmpty(_speechToken) && _isAzureInitialized;
     public bool IsVocabularyLoaded => _vocabularyService.IsLoaded;
 
     /// <summary>
@@ -84,13 +86,11 @@ public class AzureSpeechService : IAzureSpeechService
 
     public AzureSpeechService(
         HttpClient httpClient,
-        ILogger<AzureSpeechService> logger,
         SpeechRecognitionService fallbackRecognition,
         TextToSpeechService fallbackTTS,
         AviationVocabularyService vocabularyService)
     {
         _httpClient = httpClient;
-        _logger = logger;
         _fallbackRecognition = fallbackRecognition;
         _fallbackTTS = fallbackTTS;
         _vocabularyService = vocabularyService;
@@ -103,45 +103,75 @@ public class AzureSpeechService : IAzureSpeechService
     {
         try
         {
-            _subscriptionKey = subscriptionKey ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
-            _region = region ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus";
-
             // Load aviation vocabulary first
             var vocabularyLoaded = await _vocabularyService.LoadVocabularyAsync();
             if (vocabularyLoaded)
             {
                 var stats = _vocabularyService.GetStats();
-                _logger.LogInformation($"Aviation vocabulary loaded: {stats.TotalTerms} terms, {stats.ControllerVerbs} controller verbs, {stats.PilotResponses} pilot responses");
+                Log.Information($"Aviation vocabulary loaded: {stats.TotalTerms} terms, {stats.ControllerVerbs} controller verbs, {stats.PilotResponses} pilot responses");
             }
             else
             {
-                _logger.LogWarning("Failed to load aviation vocabulary, proceeding without custom terms");
+                Log.Warning("Failed to load aviation vocabulary, proceeding without custom terms");
             }
 
-            if (string.IsNullOrEmpty(_subscriptionKey))
-            {
-                _logger.LogInformation("No Azure Speech key provided, using Web Speech API fallback");
-                return await InitializeFallbackAsync();
-            }
-
-            // Test Azure connection
-            var isValid = await ValidateAzureCredentialsAsync();
-            if (isValid)
+            // Fetch a short-lived token from the BFF (subscription key stays server-side)
+            var tokenFetched = await FetchSpeechTokenFromBffAsync();
+            if (tokenFetched)
             {
                 _isAzureInitialized = true;
-                _logger.LogInformation("Azure Speech Services initialized successfully");
+                Log.Information("Azure Speech Services initialized via BFF token for region {Region}", _region);
                 return true;
             }
             else
             {
-                _logger.LogWarning("Azure Speech Services validation failed, falling back to Web Speech API");
+                Log.Warning("BFF speech token unavailable, falling back to Web Speech API");
                 return await InitializeFallbackAsync();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize Azure Speech Services, using fallback");
+            Log.Error(ex, "Failed to initialize Azure Speech Services, using fallback");
             return await InitializeFallbackAsync();
+        }
+    }
+
+    private async Task<bool> FetchSpeechTokenFromBffAsync()
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync("/api/speech/token", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Information("BFF speech token endpoint returned {Status}", response.StatusCode);
+                return false;
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var token = doc.RootElement.GetProperty("token").GetString();
+            var r = doc.RootElement.GetProperty("region").GetString();
+
+            if (string.IsNullOrWhiteSpace(token))
+                return false;
+
+            _speechToken = token;
+            _region = r ?? "eastus";
+            _tokenFetchedAt = DateTimeOffset.UtcNow;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to fetch speech token from BFF");
+            return false;
+        }
+    }
+
+    private async Task EnsureTokenFreshAsync()
+    {
+        if (DateTimeOffset.UtcNow - _tokenFetchedAt >= TokenRefreshInterval)
+        {
+            await FetchSpeechTokenFromBffAsync();
         }
     }
 
@@ -154,7 +184,7 @@ public class AzureSpeechService : IAzureSpeechService
         else
         {
             // Fallback to Web Speech API (would need audio conversion)
-            _logger.LogInformation("Using Web Speech API fallback for recognition");
+            Log.Information("Using Web Speech API fallback for recognition");
             return new SpeechRecognitionResult
             {
                 IsSuccess = false,
@@ -174,7 +204,7 @@ public class AzureSpeechService : IAzureSpeechService
         else
         {
             // Fallback to Web Speech API
-            _logger.LogInformation("Using Web Speech API fallback for synthesis");
+            Log.Information("Using Web Speech API fallback for synthesis");
             await _fallbackTTS.SpeakAsync(text);
             return Array.Empty<byte>(); // Web Speech API doesn't return audio data
         }
@@ -205,24 +235,6 @@ public class AzureSpeechService : IAzureSpeechService
         }
     }
 
-    private async Task<bool> ValidateAzureCredentialsAsync()
-    {
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Post, 
-                $"https://{_region}.api.cognitive.microsoft.com/sts/v1.0/issueToken");
-            request.Headers.Add("Ocp-Apim-Subscription-Key", _subscriptionKey);
-
-            var response = await _httpClient.SendAsync(request);
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to validate Azure credentials");
-            return false;
-        }
-    }
-
     private async Task<bool> InitializeFallbackAsync()
     {
         var recognitionInit = await _fallbackRecognition.InitializeAsync();
@@ -234,10 +246,13 @@ public class AzureSpeechService : IAzureSpeechService
     {
         try
         {
+            await EnsureTokenFreshAsync();
+
             var endpoint = $"https://{_region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1";
             var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            
-            request.Headers.Add("Ocp-Apim-Subscription-Key", _subscriptionKey);
+
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _speechToken);
             request.Headers.Add("Transfer-Encoding", "chunked");
             request.Content = new ByteArrayContent(audioData);
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
@@ -280,7 +295,7 @@ public class AzureSpeechService : IAzureSpeechService
             else
             {
                 var error = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Azure Speech recognition failed: {Error}", error);
+                Log.Error("Azure Speech recognition failed: {Error}", error);
                 return new SpeechRecognitionResult
                 {
                     IsSuccess = false,
@@ -290,7 +305,7 @@ public class AzureSpeechService : IAzureSpeechService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception during Azure speech recognition");
+            Log.Error(ex, "Exception during Azure speech recognition");
             return new SpeechRecognitionResult
             {
                 IsSuccess = false,
@@ -303,11 +318,14 @@ public class AzureSpeechService : IAzureSpeechService
     {
         try
         {
+            await EnsureTokenFreshAsync();
+
             var endpoint = $"https://{_region}.tts.speech.microsoft.com/cognitiveservices/v1";
             var ssml = CreateATCSSML(text, voiceProfile);
-            
+
             var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Headers.Add("Ocp-Apim-Subscription-Key", _subscriptionKey);
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _speechToken);
             request.Headers.Add("X-Microsoft-OutputFormat", "audio-24khz-48kbitrate-mono-mp3");
             request.Content = new StringContent(ssml, Encoding.UTF8, "application/ssml+xml");
 
@@ -320,13 +338,13 @@ public class AzureSpeechService : IAzureSpeechService
             else
             {
                 var error = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Azure Speech synthesis failed: {Error}", error);
+                Log.Error("Azure Speech synthesis failed: {Error}", error);
                 return Array.Empty<byte>();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception during Azure speech synthesis");
+            Log.Error(ex, "Exception during Azure speech synthesis");
             return Array.Empty<byte>();
         }
     }
@@ -335,7 +353,7 @@ public class AzureSpeechService : IAzureSpeechService
     {
         // This would implement WebSocket connection to Azure for real-time recognition
         // For now, return false to use fallback
-        _logger.LogInformation("Azure continuous recognition not implemented, using fallback");
+        Log.Information("Azure continuous recognition not implemented, using fallback");
         await _fallbackRecognition.StartListeningAsync();
         return true;
     }
@@ -458,7 +476,7 @@ public class AzureSpeechService : IAzureSpeechService
             }
         }
 
-        _logger.LogDebug($"Enhanced recognition: '{recognizedText}' -> '{enhanced}'");
+        Log.Debug($"Enhanced recognition: '{recognizedText}' -> '{enhanced}'");
         return enhanced;
     }
 
@@ -492,7 +510,7 @@ public class AzureSpeechService : IAzureSpeechService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to parse Azure response");
+            Log.Error(ex, "Failed to parse Azure response");
             return new SpeechRecognitionResult
             {
                 IsSuccess = false,

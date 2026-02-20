@@ -1,22 +1,47 @@
-{{- if .Values.autoscaling.enabled }}
+{{- if .Values.web.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "aiatc.fullname" . }}
+  name: {{ include "aiatc.fullname" . }}-web
   labels:
     {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "aiatc.fullname" . }}
-  minReplicas: {{ .Values.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+    name: {{ include "aiatc.fullname" . }}-web
+  minReplicas: {{ .Values.web.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.web.autoscaling.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.web.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+---
+{{- if .Values.scenarioService.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "aiatc.fullname" . }}-scenario-service
+  labels:
+    {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scenario-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "aiatc.fullname" . }}-scenario-service
+  minReplicas: {{ .Values.scenarioService.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.scenarioService.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.scenarioService.autoscaling.targetCPUUtilizationPercentage }}
 {{- end }}

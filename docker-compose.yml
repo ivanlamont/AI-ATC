@@ -1,50 +1,129 @@
 version: '3.9'
 
 services:
-  postgres:
+  # PostgreSQL for scenario usage data
+  postgres-usage:
     image: postgres:16-alpine
+    container_name: aiatc-postgres-usage
     environment:
-      POSTGRES_DB: aiatc
+      POSTGRES_DB: aiatc_usage
       POSTGRES_USER: aiatc
       POSTGRES_PASSWORD: aiatc_dev_password
     ports:
-      - "5432:5432"
+      - "4360:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_usage_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aiatc"]
+      test: ["CMD-SHELL", "pg_isready -U aiatc -d aiatc_usage"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - aiatc-network
 
+  # Redis for Dapr state store and pub/sub
   redis:
     image: redis:7-alpine
+    container_name: aiatc-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - aiatc-network
 
-  web:
+  # Dapr placement service
+  dapr-placement:
+    image: "daprio/dapr:1.16.0"
+    container_name: aiatc-dapr-placement
+    command: ["./placement", "-port", "50006"]
+    ports:
+      - "50006:50006"
+    networks:
+      - aiatc-network
+
+  # Scenario Service (gRPC)
+  scenario-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: src/AIATC.ScenarioService/Dockerfile
+    container_name: aiatc-scenario-service
+    ports:
+      - "5001:5001"
+      - "3500:3500"  # Dapr HTTP
+      - "50001:50001" # Dapr gRPC
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5001
+      ConnectionStrings__AirspaceDb: "Host=host.docker.internal;Port=5430;Database=arinc424;Username=arinc424;Password=fly_@irline_RADA4!;Search Path=cycle2508"
+      ConnectionStrings__ScenarioUsageDb: "Host=postgres-usage;Port=5432;Database=aiatc_usage;Username=aiatc;Password=aiatc_dev_password"
+      FlightAware__ApiKey: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-usage:
+        condition: service_healthy
+      dapr-placement:
+        condition: service_started
+    networks:
+      - aiatc-network
+
+  # Dapr sidecar for scenario service
+  dapr-scenario-sidecar:
+    image: "daprio/daprd:1.16.0"
+    container_name: aiatc-dapr-scenario-sidecar
+    command: [
+      "./daprd",
+      "-app-id", "scenario-service",
+      "-app-port", "5001",
+      "-app-protocol", "grpc",
+      "-dapr-http-port", "3500",
+      "-dapr-grpc-port", "50001",
+      "-placement-host-address", "dapr-placement:50006",
+      "-components-path", "/components",
+      "-config", "/config/config.yaml"
+    ]
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/config:/config
+    depends_on:
+      - dapr-placement
+      - redis
+    network_mode: "service:scenario-service"
+
+  # BFF — serves the Blazor WASM app and holds all secrets server-side
+  bff:
+    build:
+      context: .
+      dockerfile: src/AIATC.BFF/Dockerfile
+    container_name: aiatc-bff
     ports:
       - "5000:5000"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=aiatc;Username=aiatc;Password=aiatc_dev_password"
-      Redis__Connection: "redis:6379"
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5000
+      # Inject secrets from a .env file (see .env.example) — never commit .env
+      OAuth__Azure__ClientId: ${AZURE_CLIENT_ID}
+      OAuth__Azure__ClientSecret: ${AZURE_CLIENT_SECRET}
+      OAuth__Azure__Authority: ${AZURE_AUTHORITY}
+      OAuth__Google__ClientId: ${GOOGLE_CLIENT_ID}
+      OAuth__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
+      AzureSpeech__SubscriptionKey: ${AZURE_SPEECH_KEY}
+      AzureSpeech__Region: ${AZURE_SPEECH_REGION:-eastus}
+      FlightAware__ApiKey: ${FLIGHTAWARE_API_KEY}
+      ScenarioService__Address: http://scenario-service:5001
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - .:/app
-    command: dotnet watch run --project src/AIATC.Web/AIATC.Web.csproj
+      scenario-service:
+        condition: service_started
+    networks:
+      - aiatc-network
 
 volumes:
-  postgres_data:
+  postgres_usage_data:
+
+networks:
+  aiatc-network:
+    driver: bridge

@@ -1,0 +1,19 @@
+{{- if .Values.scenarioService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aiatc.fullname" . }}-scenario-service
+  labels:
+    {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scenario-service
+spec:
+  type: {{ .Values.scenarioService.service.type }}
+  ports:
+  - port: {{ .Values.scenarioService.service.grpcPort }}
+    targetPort: grpc
+    protocol: TCP
+    name: grpc
+  selector:
+    {{- include "aiatc.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: scenario-service
+{{- end }}

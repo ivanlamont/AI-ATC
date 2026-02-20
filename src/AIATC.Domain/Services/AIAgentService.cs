@@ -1,8 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using AIATC.Domain.Models;
-using Microsoft.Extensions.Logging;
 using AIATC.Common;
+using Serilog;
 
 namespace AIATC.Domain.Services
 {
@@ -43,17 +43,14 @@ namespace AIATC.Domain.Services
     {
         private readonly string _host;
         private readonly int _port;
-        private readonly ILogger<AIAgentService> _logger;
         private AIAgentMetrics _metrics;
 
         public AIAgentService(
             string host = "localhost",
-            int port = 50051,
-            ILogger<AIAgentService> logger = null)
+            int port = 50051)
         {
             _host = host ?? "localhost";
             _port = port;
-            _logger = logger;
             _metrics = new AIAgentMetrics();
         }
 
@@ -70,12 +67,12 @@ namespace AIATC.Domain.Services
                 if (task.IsCompleted)
                     return task.Result;
 
-                _logger.LogWarning("AI action request timed out, returning neutral action");
+                Log.Warning("AI action request timed out, returning neutral action");
                 return GetNeutralAction(observation);
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error getting AI action: {ex.Message}");
+                Log.Error($"Error getting AI action: {ex.Message}");
                 return GetNeutralAction(observation);
             }
         }
@@ -101,7 +98,7 @@ namespace AIATC.Domain.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error in AI inference: {ex.Message}");
+                Log.Error($"Error in AI inference: {ex.Message}");
                 _metrics.ErrorCount++;
                 return GetNeutralAction(observation);
             }

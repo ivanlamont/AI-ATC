@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AIATC.Common;
+using Serilog;
 
 namespace AIATC.Web.Services
 {
@@ -12,12 +13,10 @@ namespace AIATC.Web.Services
         private AviationGlossary? _glossary;
         private List<string> _flatVocabulary = new();
         private readonly HttpClient _httpClient;
-        private readonly ILogger<AviationVocabularyService> _logger;
 
-        public AviationVocabularyService(HttpClient httpClient, ILogger<AviationVocabularyService> logger)
+        public AviationVocabularyService(HttpClient httpClient)
         {
             _httpClient = httpClient;
-            _logger = logger;
         }
 
         /// <summary>
@@ -49,16 +48,16 @@ namespace AIATC.Web.Services
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning($"Failed to load from {path}: {ex.Message}");
+                        Log.Warning($"Failed to load from {path}: {ex.Message}");
                     }
                 }
 
-                _logger.LogError("Could not load aviation vocabulary from any known location");
+                Log.Error("Could not load aviation vocabulary from any known location");
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading aviation vocabulary");
+                Log.Error(ex, "Error loading aviation vocabulary");
                 return false;
             }
         }
@@ -74,7 +73,7 @@ namespace AIATC.Web.Services
 
                 if (_glossary == null)
                 {
-                    _logger.LogError("Failed to deserialize aviation glossary");
+                    Log.Error("Failed to deserialize aviation glossary");
                     return;
                 }
 
@@ -82,11 +81,11 @@ namespace AIATC.Web.Services
                 _flatVocabulary.Clear();
                 ExtractVocabularyTerms();
 
-                _logger.LogInformation($"Loaded aviation vocabulary: {_flatVocabulary.Count} terms");
+                Log.Information($"Loaded aviation vocabulary: {_flatVocabulary.Count} terms");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing aviation vocabulary JSON");
+                Log.Error(ex, "Error processing aviation vocabulary JSON");
             }
         }
 

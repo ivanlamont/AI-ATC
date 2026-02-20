@@ -17,10 +17,6 @@ public class ATCDbContext : DbContext
     public DbSet<Score> Scores => Set<Score>();
     public DbSet<Scenario> Scenarios => Set<Scenario>();
     public DbSet<SavedScenario> SavedScenarios => Set<SavedScenario>();
-    public DbSet<Airport> Airports => Set<Airport>();
-    public DbSet<Runway> Runways => Set<Runway>();
-    public DbSet<Fix> Fixes => Set<Fix>();
-    public DbSet<Procedure> Procedures => Set<Procedure>();
     public DbSet<Weather> WeatherRecords => Set<Weather>();
     public DbSet<Achievement> Achievements => Set<Achievement>();
     public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
@@ -188,90 +184,6 @@ public class ATCDbContext : DbContext
             entity.HasIndex(e => new { e.UserId, e.ScenarioId, e.SaveName }).IsUnique();
         });
 
-        // Airport configuration
-        modelBuilder.Entity<Airport>(entity =>
-        {
-            entity.ToTable("airports");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.IcaoCode).HasMaxLength(4).IsRequired();
-            entity.Property(e => e.IataCode).HasMaxLength(3);
-            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
-            entity.Property(e => e.Latitude).HasPrecision(10, 7);
-            entity.Property(e => e.Longitude).HasPrecision(10, 7);
-            entity.Property(e => e.Timezone).HasMaxLength(50);
-            entity.Property(e => e.CountryCode).HasMaxLength(2);
-
-            entity.HasIndex(e => e.IcaoCode).IsUnique();
-            entity.HasIndex(e => new { e.Latitude, e.Longitude });
-        });
-
-        // Runway configuration
-        modelBuilder.Entity<Runway>(entity =>
-        {
-            entity.ToTable("runways");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.RunwayIdentifier).HasMaxLength(5).IsRequired();
-            entity.Property(e => e.SurfaceType).HasMaxLength(20);
-            entity.Property(e => e.LocalizerFrequency).HasPrecision(6, 3);
-            entity.Property(e => e.GlideslopeAngle).HasPrecision(3, 1).HasDefaultValue(3.0m);
-            entity.Property(e => e.LatitudeThreshold).HasPrecision(10, 7);
-            entity.Property(e => e.LongitudeThreshold).HasPrecision(10, 7);
-
-            entity.HasOne(e => e.Airport)
-                .WithMany(a => a.Runways)
-                .HasForeignKey(e => e.AirportId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(e => e.AirportId);
-            entity.HasIndex(e => new { e.AirportId, e.RunwayIdentifier }).IsUnique();
-        });
-
-        // Fix configuration
-        modelBuilder.Entity<Fix>(entity =>
-        {
-            entity.ToTable("fixes");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.FixIdentifier).HasMaxLength(5).IsRequired();
-            entity.Property(e => e.Name).HasMaxLength(100);
-            entity.Property(e => e.Latitude).HasPrecision(10, 7);
-            entity.Property(e => e.Longitude).HasPrecision(10, 7);
-            entity.Property(e => e.Type).HasMaxLength(20);
-
-            entity.HasOne(e => e.AssociatedAirport)
-                .WithMany(a => a.Fixes)
-                .HasForeignKey(e => e.AssociatedAirportId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.HasIndex(e => e.FixIdentifier).IsUnique();
-            entity.HasIndex(e => new { e.Latitude, e.Longitude });
-            entity.HasIndex(e => e.AssociatedAirportId);
-        });
-
-        // Procedure configuration
-        modelBuilder.Entity<Procedure>(entity =>
-        {
-            entity.ToTable("procedures");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.ProcedureType).HasMaxLength(10).IsRequired();
-            entity.Property(e => e.ProcedureName).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.ProcedureIdentifier).HasMaxLength(20);
-
-            entity.HasOne(e => e.Airport)
-                .WithMany(a => a.Procedures)
-                .HasForeignKey(e => e.AirportId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(e => e.Runway)
-                .WithMany(r => r.Procedures)
-                .HasForeignKey(e => e.RunwayId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.HasIndex(e => e.AirportId);
-            entity.HasIndex(e => e.RunwayId);
-            entity.HasIndex(e => e.ProcedureType);
-            entity.HasIndex(e => new { e.AirportId, e.ProcedureType, e.ProcedureName }).IsUnique();
-        });
-
         // Weather configuration
         modelBuilder.Entity<Weather>(entity =>
         {
@@ -282,12 +194,7 @@ public class ATCDbContext : DbContext
             entity.Property(e => e.Source).HasMaxLength(20);
             entity.Property(e => e.FetchedAt).HasDefaultValueSql("NOW()");
 
-            entity.HasOne(e => e.Airport)
-                .WithMany(a => a.WeatherRecords)
-                .HasForeignKey(e => e.AirportId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(e => e.AirportId);
+            // Airport relationship removed - will be added back when consolidating with ARINC models
             entity.HasIndex(e => e.ValidFrom).IsDescending();
             entity.HasIndex(e => new { e.AirportId, e.ValidFrom }).IsDescending();
         });

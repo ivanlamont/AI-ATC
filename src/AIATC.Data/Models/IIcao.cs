@@ -1,0 +1,16 @@
+namespace AIATC.Data.Models;
+
+using AIATC.Data.Models.Types;
+using AIATC.Data.Types.Common;
+
+/**<summary>
+An entity that has two character ICAO code.
+</summary>*/
+public interface IIcao
+{
+    /**<summary>
+    <c>ICAO Code (ICAO CODE)</c> field.
+    </summary>
+    <remarks>See section 5.14.</remarks>*/
+    Icao Icao { get; set; }
+}

@@ -86,3 +86,8 @@ node_modules/
 # Package manager lock files
 package-lock.json
 yarn.lock
+**/appsettings.Development.json
+
+# Docker secrets (never commit these)
+.env
+.env.local

@@ -21,7 +21,4 @@ public class Weather
     public string? TafRaw { get; set; }
     public string? Source { get; set; }
     public DateTime FetchedAt { get; set; }
-
-    // Navigation properties
-    public Airport Airport { get; set; } = null!;
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using AIATC.Domain.Models.Aviation;
 using AIATC.Data.Repositories;
+using Serilog;
 
 namespace AIATC.WorldDataService.Controllers;
 
@@ -14,14 +15,10 @@ namespace AIATC.WorldDataService.Controllers;
 public class AircraftTypesController : ControllerBase
 {
     private readonly IAircraftTypeRepository _aircraftTypeRepository;
-    private readonly ILogger<AircraftTypesController> _logger;
 
-    public AircraftTypesController(
-        IAircraftTypeRepository aircraftTypeRepository,
-        ILogger<AircraftTypesController> logger)
+    public AircraftTypesController(IAircraftTypeRepository aircraftTypeRepository)
     {
         _aircraftTypeRepository = aircraftTypeRepository;
-        _logger = logger;
     }
 
     /// <summary>
@@ -38,7 +35,7 @@ public class AircraftTypesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving all aircraft types");
+            Log.Error(ex, "Error retrieving all aircraft types");
             return StatusCode(500, "Internal server error occurred while retrieving aircraft types");
         }
     }
@@ -69,7 +66,7 @@ public class AircraftTypesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving aircraft type with ICAO code: {IcaoCode}", icaoCode);
+            Log.Error(ex, "Error retrieving aircraft type with ICAO code: {IcaoCode}", icaoCode);
             return StatusCode(500, "Internal server error occurred while retrieving aircraft type");
         }
     }
@@ -94,7 +91,7 @@ public class AircraftTypesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving aircraft types for manufacturer: {Manufacturer}", manufacturer);
+            Log.Error(ex, "Error retrieving aircraft types for manufacturer: {Manufacturer}", manufacturer);
             return StatusCode(500, "Internal server error occurred while retrieving aircraft types");
         }
     }
@@ -131,7 +128,7 @@ public class AircraftTypesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating aircraft type");
+            Log.Error(ex, "Error creating aircraft type");
             return StatusCode(500, "Internal server error occurred while creating aircraft type");
         }
     }
@@ -173,7 +170,7 @@ public class AircraftTypesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating aircraft type with ICAO code: {IcaoCode}", icaoCode);
+            Log.Error(ex, "Error updating aircraft type with ICAO code: {IcaoCode}", icaoCode);
             return StatusCode(500, "Internal server error occurred while updating aircraft type");
         }
     }
@@ -204,7 +201,7 @@ public class AircraftTypesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting aircraft type with ICAO code: {IcaoCode}", icaoCode);
+            Log.Error(ex, "Error deleting aircraft type with ICAO code: {IcaoCode}", icaoCode);
             return StatusCode(500, "Internal server error occurred while deleting aircraft type");
         }
     }

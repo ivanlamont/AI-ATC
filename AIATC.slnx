@@ -1,9 +1,13 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/AIATC.BFF/AIATC.BFF.csproj" />
     <Project Path="src/AIATC.AIAgentService/AIATC.AIAgentService.csproj" />
     <Project Path="src/AIATC.AudioService/AIATC.AudioService.csproj" />
     <Project Path="src/AIATC.Common/AIATC.Common.csproj" />
     <Project Path="src/AIATC.Domain/AIATC.Domain.csproj" />
+    <Project Path="src/AIATC.ReferenceData.Context/AIATC.ReferenceData.Context.csproj" />
+    <Project Path="src/AIATC.ReferenceData/AIATC.ReferenceData.csproj" />
+    <Project Path="src/AIATC.ScenarioService.Data/AIATC.ScenarioService.Data.csproj" />
     <Project Path="src/AIATC.ScenarioService/AIATC.ScenarioService.csproj" />
     <Project Path="src/AIATC.SimulationService/AIATC.SimulationService.csproj" />
     <Project Path="src/AIATC.UserService/AIATC.UserService.csproj" />

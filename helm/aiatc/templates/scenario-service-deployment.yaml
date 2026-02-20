@@ -1,0 +1,76 @@
+{{- if .Values.scenarioService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aiatc.fullname" . }}-scenario-service
+  labels:
+    {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scenario-service
+spec:
+  {{- if not .Values.scenarioService.autoscaling.enabled }}
+  replicas: {{ .Values.scenarioService.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aiatc.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scenario-service
+  template:
+    metadata:
+      labels:
+        {{- include "aiatc.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scenario-service
+      {{- if .Values.scenarioService.dapr.enabled }}
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: {{ .Values.scenarioService.dapr.appId | quote }}
+        dapr.io/app-port: {{ .Values.scenarioService.dapr.appPort | quote }}
+        dapr.io/app-protocol: {{ .Values.scenarioService.dapr.appProtocol | quote }}
+        dapr.io/enable-api-logging: "true"
+      {{- end }}
+    spec:
+      containers:
+      - name: scenario-service
+        image: "{{ .Values.scenarioService.image.repository }}:{{ .Values.scenarioService.image.tag }}"
+        imagePullPolicy: {{ .Values.scenarioService.image.pullPolicy }}
+        ports:
+        - name: grpc
+          containerPort: {{ .Values.scenarioService.service.grpcPort }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: grpc
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: grpc
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.scenarioService.resources | nindent 10 }}
+        env:
+        {{- range $key, $value := .Values.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        - name: ASPNETCORE_URLS
+          value: "http://+:{{ .Values.scenarioService.service.grpcPort }}"
+        - name: ConnectionStrings__ScenarioUsageDb
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aiatc.fullname" . }}-usage-db
+              key: connection-string
+        {{- if .Values.externalReferenceDb.enabled }}
+        - name: ConnectionStrings__AirspaceDb
+          value: "Host={{ .Values.externalReferenceDb.host }};Port={{ .Values.externalReferenceDb.port }};Database={{ .Values.externalReferenceDb.database }};Username={{ .Values.externalReferenceDb.username }};Password=$(REFERENCE_DB_PASSWORD);Search Path={{ .Values.externalReferenceDb.schema }}"
+        - name: REFERENCE_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.externalReferenceDb.passwordSecretName }}
+              key: {{ .Values.externalReferenceDb.passwordSecretKey }}
+        {{- end }}
+        - name: FlightAware__ApiKey
+          value: {{ .Values.flightAware.apiKey | quote }}
+{{- end }}

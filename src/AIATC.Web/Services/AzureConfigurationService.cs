@@ -1,3 +1,5 @@
+using Serilog;
+
 namespace AIATC.Web.Services;
 
 /// <summary>
@@ -29,25 +31,21 @@ public interface IAzureConfigurationService
 
 public class AzureConfigurationService : IAzureConfigurationService
 {
-    private readonly ILogger<AzureConfigurationService> _logger;
     private AzureConfiguration? _cachedConfiguration;
 
     public bool IsConfigured => _cachedConfiguration?.IsValid == true;
 
-    public AzureConfigurationService(ILogger<AzureConfigurationService> logger)
-    {
-        _logger = logger;
-    }
+    public AzureConfigurationService() { }
 
     public async Task<AzureConfiguration> LoadConfigurationAsync()
     {
         if (_cachedConfiguration != null)
             return _cachedConfiguration;
 
-        // Try environment variables first
+        // The subscription key is held server-side in AIATC.BFF; the browser
+        // only needs the region to construct Azure Speech endpoint URLs.
         var config = new AzureConfiguration
         {
-            SpeechSubscriptionKey = Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY"),
             SpeechRegion = Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus",
             EnableSpeechRecognition = true,
             EnableTextToSpeech = true,
@@ -55,19 +53,10 @@ public class AzureConfigurationService : IAzureConfigurationService
             DefaultVoiceProfile = ATCVoiceProfile.ControllerMale
         };
 
-        // Try to load from local storage in a real app
-        // For now, use environment variables or defaults
-        
         _cachedConfiguration = config;
-        
-        if (config.IsValid)
-        {
-            _logger.LogInformation("Azure configuration loaded successfully for region: {Region}", config.SpeechRegion);
-        }
-        else
-        {
-            _logger.LogInformation("No Azure keys found, Web Speech API will be used as fallback");
-        }
+
+        Log.Information("Azure configuration loaded for region: {Region} (key managed by BFF)",
+            config.SpeechRegion);
 
         return config;
     }
@@ -77,7 +66,7 @@ public class AzureConfigurationService : IAzureConfigurationService
         _cachedConfiguration = configuration;
         
         // In a real application, save to local storage or user preferences
-        _logger.LogInformation("Azure configuration saved");
+        Log.Information("Azure configuration saved");
         
         await Task.CompletedTask;
     }
@@ -126,7 +115,9 @@ public class AzureConfigurationService : IAzureConfigurationService
 /// </summary>
 public class AzureConfiguration
 {
-    public string? SpeechSubscriptionKey { get; set; }
+    /// <summary>
+    /// The subscription key is held server-side in AIATC.BFF; not needed in the browser.
+    /// </summary>
     public string SpeechRegion { get; set; } = "eastus";
     public bool EnableSpeechRecognition { get; set; } = true;
     public bool EnableTextToSpeech { get; set; } = true;
@@ -137,19 +128,15 @@ public class AzureConfiguration
     public string Language { get; set; } = "en-US";
 
     /// <summary>
-    /// Check if the configuration has valid Azure credentials
+    /// Always true — the BFF issues tokens so we do not need the key client-side.
+    /// Actual availability is determined at runtime by AzureSpeechService.IsAzureAvailable.
     /// </summary>
-    public bool IsValid => !string.IsNullOrWhiteSpace(SpeechSubscriptionKey) 
-                          && !string.IsNullOrWhiteSpace(SpeechRegion);
+    public bool IsValid => !string.IsNullOrWhiteSpace(SpeechRegion);
 
-    /// <summary>
-    /// Check if speech recognition is enabled and configured
-    /// </summary>
+    /// <summary>Check if speech recognition is enabled.</summary>
     public bool CanUseSpeechRecognition => EnableSpeechRecognition && IsValid;
 
-    /// <summary>
-    /// Check if text-to-speech is enabled and configured
-    /// </summary>
+    /// <summary>Check if text-to-speech is enabled.</summary>
     public bool CanUseTextToSpeech => EnableTextToSpeech && IsValid;
 }
 
