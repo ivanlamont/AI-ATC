@@ -88,9 +88,14 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // Serve the Blazor WASM static files (produced by the ProjectReference to AIATC.Web)
+    // Serve the Blazor WASM static files (produced by the ProjectReference to AIATC.Web).
+    // UseBlazorFrameworkFiles handles /_framework/* (the WASM runtime).
+    // MapStaticAssets serves everything else in wwwroot (js/, css/, appsettings.json, etc.)
+    // via the .NET 10 static-web-assets manifest — UseStaticFiles() alone is insufficient
+    // because WASM wwwroot files are only in the manifest, not physically copied to wwwroot.
     app.UseBlazorFrameworkFiles();
-    app.UseStaticFiles();
+    app.UseStaticFiles();     // serves any BFF-owned physical wwwroot files
+    app.MapStaticAssets();    // serves WASM project wwwroot files from the assets manifest
 
     app.MapControllers();
 
