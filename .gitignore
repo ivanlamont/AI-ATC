@@ -20,7 +20,7 @@ src/AIATC.Web/obj/
 # Publish outputs
 publish/
 dist/
-wwwroot/
+/wwwroot/
 
 # .NET build artifacts
 */bin/

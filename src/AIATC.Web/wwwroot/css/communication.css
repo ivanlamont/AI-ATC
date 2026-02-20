@@ -1,0 +1,330 @@
+/* ATC Communication Hub Styles */
+.atc-communication-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.communication-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.service-status {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-weight: 500;
+}
+
+.vocabulary-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9em;
+    color: #6c757d;
+    margin-left: 15px;
+}
+
+.vocabulary-details {
+    font-size: 0.85em;
+    color: #6c757d;
+    margin-left: 8px;
+}
+
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.status-azure {
+    background-color: #28a745;
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
+}
+
+.status-fallback {
+    background-color: #ffc107;
+    box-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+}
+
+.status-vocabulary {
+    background-color: #17a2b8;
+    box-shadow: 0 0 8px rgba(23, 162, 184, 0.6);
+}
+
+.communication-panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 30px;
+}
+
+.panel {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+}
+
+.recognition-display {
+    min-height: 200px;
+}
+
+.listening-indicator {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: #e8f5e8;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.pulse-animation {
+    width: 20px;
+    height: 20px;
+    background: #28a745;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.recognition-result {
+    background: white;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.confidence {
+    color: #6c757d;
+}
+
+.result-text {
+    font-size: 16px;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.aviation-command {
+    font-size: 14px;
+    color: #007bff;
+    display: flex;
+    gap: 10px;
+}
+
+.voice-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.synthesis-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.speech-input {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.quick-phrases h5 {
+    margin-bottom: 10px;
+    color: #495057;
+}
+
+.phrase-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.phrase-buttons .btn {
+    font-size: 12px;
+    padding: 4px 8px;
+}
+
+.synthesis-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.communication-log {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Live Traffic Button Styling */
+.live-traffic-btn {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.live-traffic-btn:hover {
+    background: linear-gradient(135deg, #0056b3, #004085);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.4);
+}
+
+.live-traffic-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+}
+
+.live-traffic-btn::before {
+    content: "🌐";
+    font-size: 16px;
+}
+
+@media (max-width: 768px) {
+    .live-traffic-btn {
+        padding: 6px 12px;
+        font-size: 14px;
+    }
+}
+
+.log-entries {
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.log-entry {
+    display: grid;
+    grid-template-columns: 80px 120px 1fr auto;
+    gap: 15px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    align-items: center;
+}
+
+.log-entry.inbound {
+    background: #e3f2fd;
+    border-left: 4px solid #2196f3;
+}
+
+.log-entry.outbound {
+    background: #e8f5e8;
+    border-left: 4px solid #4caf50;
+}
+
+.log-entry.system {
+    background: #f3e5f5;
+    border-left: 4px solid #9c27b0;
+}
+
+.log-entry.warning {
+    background: #fff3e0;
+    border-left: 4px solid #ff9800;
+}
+
+.log-entry.error {
+    background: #ffebee;
+    border-left: 4px solid #f44336;
+}
+
+.timestamp {
+    color: #6c757d;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.source {
+    font-weight: 500;
+    color: #495057;
+}
+
+.message {
+    color: #333;
+}
+
+.configuration-panel {
+    background: white;
+    border: 1px solid #d0d0d0;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.config-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.config-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.configuration-toggle {
+    text-align: center;
+    margin-top: 20px;
+}
+
+@media (max-width: 768px) {
+    .communication-panels {
+        grid-template-columns: 1fr;
+    }
+    
+    .log-entry {
+        grid-template-columns: 1fr;
+        gap: 5px;
+    }
+}
