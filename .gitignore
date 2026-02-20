@@ -91,3 +91,6 @@ yarn.lock
 # Docker secrets (never commit these)
 .env
 .env.local
+
+# Bicep parameter files contain live secrets when filled in
+infra/main.parameters.json

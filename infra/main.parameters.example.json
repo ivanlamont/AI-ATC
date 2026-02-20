@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus2"
+    },
+    "oauthAzureClientId": {
+      "value": "<your-azure-client-id>"
+    },
+    "oauthAzureAuthority": {
+      "value": "https://login.microsoftonline.com/common"
+    },
+    "oauthGoogleClientId": {
+      "value": "<your-google-client-id>"
+    },
+    "azureSpeechRegion": {
+      "value": "eastus"
+    },
+
+    "postgresAdminPassword": {
+      "value": ""
+    },
+    "oauthAzureClientSecret": {
+      "value": ""
+    },
+    "oauthGoogleClientSecret": {
+      "value": ""
+    },
+    "azureSpeechSubscriptionKey": {
+      "value": ""
+    },
+    "flightAwareApiKey": {
+      "value": ""
+    },
+    "airspaceDbConnectionString": {
+      "value": ""
+    }
+  }
+}
