@@ -72,6 +72,15 @@ jobs:
       - name: Deploy BFF Container App
         if: github.event_name == 'push'
         run: |
+          # Fix targetPort BEFORE creating the revision — ingress changes are
+          # app-level (no new revision), so the revision that follows inherits 8080.
+          az containerapp ingress enable \
+            --name ${{ env.BFF_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --target-port 8080 \
+            --type external \
+            --transport http
+
           az containerapp update \
             --name ${{ env.BFF_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -79,11 +88,6 @@ jobs:
             --min-replicas 1 \
             --set-env-vars "ASPNETCORE_HTTP_PORTS=8080" \
             --remove-env-vars ASPNETCORE_URLS
-
-          az containerapp ingress update \
-            --name ${{ env.BFF_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --target-port 8080
 
       - name: Deploy ScenarioService Container App
         if: github.event_name == 'push'
