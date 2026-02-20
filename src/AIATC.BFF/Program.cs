@@ -34,10 +34,12 @@ try
             options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
             options.Cookie.Name = ".AIATC.Auth";
             options.ExpireTimeSpan = TimeSpan.FromHours(8);
-            // For API endpoints return 401 instead of redirecting to a login page
+            // For API and auth-info endpoints return 401 instead of redirecting to
+            // a login page — these are called via fetch() and expect JSON, not HTML.
             options.Events.OnRedirectToLogin = ctx =>
             {
-                if (ctx.Request.Path.StartsWithSegments("/api"))
+                if (ctx.Request.Path.StartsWithSegments("/api") ||
+                    ctx.Request.Path.StartsWithSegments("/auth"))
                 {
                     ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     return Task.CompletedTask;
@@ -72,10 +74,15 @@ try
 
     // ACA terminates TLS — trust X-Forwarded-Proto so Request.Scheme is 'https',
     // which is required for correct redirect URIs and Secure cookie issuance.
-    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    // KnownNetworks/KnownProxies are cleared so ACA's internal proxy (10.x.x.x)
+    // is trusted; by default only loopback is trusted.
+    var forwardedHeadersOptions = new ForwardedHeadersOptions
     {
         ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-    });
+    };
+    forwardedHeadersOptions.KnownNetworks.Clear();
+    forwardedHeadersOptions.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwardedHeadersOptions);
 
     app.UseSession();
     app.UseAuthentication();
