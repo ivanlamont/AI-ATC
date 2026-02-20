@@ -1,6 +1,7 @@
 using AIATC.BFF;
 using AIATC.BFF.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -19,7 +20,7 @@ try
     {
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.Cookie.Name = ".AIATC.Session";
         options.IdleTimeout = TimeSpan.FromMinutes(30);
     });
@@ -30,7 +31,7 @@ try
         {
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
             options.Cookie.Name = ".AIATC.Auth";
             options.ExpireTimeSpan = TimeSpan.FromHours(8);
             // For API endpoints return 401 instead of redirecting to a login page
@@ -68,6 +69,13 @@ try
     builder.Services.AddSingleton<SpeechTokenCache>();
 
     var app = builder.Build();
+
+    // ACA terminates TLS — trust X-Forwarded-Proto so Request.Scheme is 'https',
+    // which is required for correct redirect URIs and Secure cookie issuance.
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    });
 
     app.UseSession();
     app.UseAuthentication();
