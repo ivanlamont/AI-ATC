@@ -1,4 +1,4 @@
-New deploy script name: Build and Deploy to Azure Container Apps
+name: Build and Deploy to Azure Container Apps
 
 on:
   push:
