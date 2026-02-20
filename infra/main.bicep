@@ -337,7 +337,7 @@ resource bffApp 'Microsoft.App/containerApps@2024-03-01' = {
       }]
       ingress: {
         external: true
-        targetPort: 5000
+        targetPort: 8080
         transport: 'http'
         allowInsecure: false
       }
@@ -359,20 +359,20 @@ resource bffApp 'Microsoft.App/containerApps@2024-03-01' = {
         probes: [
           {
             type: 'Liveness'
-            httpGet: { path: '/', port: 5000, scheme: 'HTTP' }
+            httpGet: { path: '/', port: 8080, scheme: 'HTTP' }
             initialDelaySeconds: 30
             periodSeconds: 15
           }
           {
             type: 'Readiness'
-            httpGet: { path: '/', port: 5000, scheme: 'HTTP' }
+            httpGet: { path: '/', port: 8080, scheme: 'HTTP' }
             initialDelaySeconds: 10
             periodSeconds: 5
           }
         ]
         env: [
           { name: 'ASPNETCORE_ENVIRONMENT',       value: 'Production' }
-          { name: 'ASPNETCORE_URLS',              value: 'http://+:5000' }
+          { name: 'ASPNETCORE_HTTP_PORTS',        value: '8080' }
           { name: 'OAuth__Azure__ClientId',       value: oauthAzureClientId }
           { name: 'OAuth__Azure__ClientSecret',   secretRef: 'oauth-azure-secret' }
           { name: 'OAuth__Azure__Authority',      value: oauthAzureAuthority }

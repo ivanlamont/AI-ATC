@@ -76,7 +76,14 @@ jobs:
             --name ${{ env.BFF_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/aiatc-bff:${{ github.sha }} \
-            --min-replicas 1
+            --min-replicas 1 \
+            --set-env-vars "ASPNETCORE_HTTP_PORTS=8080" \
+            --remove-env-vars ASPNETCORE_URLS
+
+          az containerapp ingress update \
+            --name ${{ env.BFF_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --target-port 8080
 
       - name: Deploy ScenarioService Container App
         if: github.event_name == 'push'
