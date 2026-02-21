@@ -116,10 +116,21 @@ try
     //
     // .wasm files need the application/wasm content type for the browser to accept
     // them; the default provider in ASP.NET Core includes this mapping.
+    // UseStaticFiles serves physical files from /app/wwwroot (populated by the
+    // Dockerfile cp + COPY steps: source wwwroot files + wasm-publish output).
     app.UseStaticFiles();
-    // MapStaticAssets is omitted: all assets are physical files served above.
-    // Keeping it would create BFF-manifest endpoints with wrong fingerprints that
-    // could conflict with the physically-served wasm-publish files.
+
+    // MapStaticAssets serves compressed files from the BFF's static-web-assets
+    // manifest. This is required for files that dotnet publish only emits as
+    // compressed variants (e.g. _framework/icudt_EFIGS.*.dat is published as
+    // .dat.br only — UseStaticFiles() would 404 it). The BFF manifest fingerprints
+    // match the wasm-publish fingerprints because both builds use the same SDK
+    // version and NuGet packages (same file content → same SHA256 fingerprint).
+    //
+    // UseBlazorFrameworkFiles() is intentionally absent — it caused 500s by
+    // intercepting _framework/* requests using a manifest-backed provider that
+    // failed to match files it should have passed through.
+    app.MapStaticAssets();
 
     app.MapControllers();
 
