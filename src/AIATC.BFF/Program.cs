@@ -125,7 +125,7 @@ try
     // that MapStaticAssets() populates), then find the RouteEndpoint whose pattern
     // is "index.html" and invoke its RequestDelegate directly for every unmatched
     // Blazor client-side route (/, /simulation, /challenge-mode, etc.).
-    var blazorEndpoints = app.DataSources;
+    var blazorEndpoints = ((IEndpointRouteBuilder)app).DataSources;
 
     app.MapFallback(async (HttpContext ctx) =>
     {
