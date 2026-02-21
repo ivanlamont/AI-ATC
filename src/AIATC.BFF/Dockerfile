@@ -18,30 +18,24 @@ COPY src/AIATC.Domain ./src/AIATC.Domain
 COPY src/AIATC.Common ./src/AIATC.Common
 COPY src/AIATC.ScenarioService ./src/AIATC.ScenarioService
 
-# Publish BFF — this also builds and embeds the WASM output via the ProjectReference
+# ── Stage: wasm-publish ──────────────────────────────────────────────────────
+# Publish AIATC.Web standalone so the Blazor SDK runs
+# OverrideBlazorWebAssemblyHtmlAssets and produces a fully-processed index.html
+# (fingerprint placeholders resolved, import map populated). This does NOT happen
+# when the WASM project is only *built* as a Private="false" dependency of the BFF.
+FROM build AS wasm-publish
+RUN dotnet publish "src/AIATC.Web/AIATC.Web.csproj" -c Release -o /wasm/publish \
+    && echo "=== Processed index.html (first 35 lines) ===" \
+    && head -35 /wasm/publish/wwwroot/index.html
+
+# ── Stage: publish ────────────────────────────────────────────────────────────
 FROM build AS publish
 RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish
 
-# index.html is NOT copied to BFF wwwroot when Private="false" is set on the
-# ProjectReference (that attribute suppresses the Blazor SDK's hosting copy target).
-# The source wwwroot/index.html has unresolved placeholders (fingerprint hashes,
-# import map); the processed version is written to AIATC.Web's intermediate output
-# by the OverrideBlazorWebAssemblyHtmlAssets target during publish.
-# Find it there and copy it to BFF wwwroot so MapFallbackToFile("index.html") works.
-RUN echo "=== All index.html files in build tree ===" \
-    && find /src/src/AIATC.Web/obj -name "index.html" 2>/dev/null \
-    && echo "=== Copying to wwwroot ===" \
-    && mkdir -p /app/publish/wwwroot \
-    && PROCESSED=$(find /src/src/AIATC.Web/obj/Release -name "index.html" 2>/dev/null | head -1) \
-    && if [ -n "$PROCESSED" ]; then \
-           echo "Using processed: $PROCESSED"; \
-           cp "$PROCESSED" /app/publish/wwwroot/index.html; \
-       else \
-           echo "Processed index.html not found in obj/Release — falling back to source"; \
-           cp /src/src/AIATC.Web/wwwroot/index.html /app/publish/wwwroot/index.html; \
-       fi \
-    && echo "=== Copied index.html (first 35 lines) ===" \
-    && head -35 /app/publish/wwwroot/index.html
+# Private="false" on the ProjectReference suppresses the SDK target that would
+# normally copy the processed index.html into the BFF wwwroot. Copy it from the
+# dedicated wasm-publish stage instead.
+COPY --from=wasm-publish /wasm/publish/wwwroot/index.html /app/publish/wwwroot/index.html
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
