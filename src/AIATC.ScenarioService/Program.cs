@@ -35,8 +35,9 @@ builder.Services.AddMemoryCache();
 // builder.Services.AddDaprClient();
 
 // Add database contexts
+var airspaceConnStr = builder.Configuration.GetConnectionString("AirspaceDb");
 builder.Services.AddDbContext<AirspaceReferenceDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("AirspaceDb")));
+    options.UseNpgsql(airspaceConnStr));
 
 builder.Services.AddDbContext<ScenarioUsageDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("ScenarioUsageDb")));
@@ -48,10 +49,11 @@ builder.Services.AddHttpClient<IFlightAwareService, FlightAwareService>();
 builder.Services.Configure<FlightAwareOptions>(
     builder.Configuration.GetSection("FlightAware"));
 
-// Add health checks
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<AirspaceReferenceDbContext>("airspace_db")
+// Add health checks — airspace_db is optional (only when connection string is configured)
+var healthChecks = builder.Services.AddHealthChecks()
     .AddDbContextCheck<ScenarioUsageDbContext>("usage_db");
+if (!string.IsNullOrEmpty(airspaceConnStr))
+    healthChecks.AddDbContextCheck<AirspaceReferenceDbContext>("airspace_db");
 
 var app = builder.Build();
 
