@@ -103,33 +103,38 @@ try
 
     // ── Static file serving ────────────────────────────────────────────────────
     //
-    // All WASM static files (including _framework/*) are physical files in
-    // /app/wwwroot, copied there by the Dockerfile from the standalone wasm-publish
-    // stage. UseStaticFiles() serves them all via the PhysicalFileProvider.
+    // UseBlazorFrameworkFiles() is intentionally absent — it uses the BFF's
+    // compiled-in static-web-assets manifest (fingerprints from the BFF build)
+    // and caused 500s when those fingerprints differed from what wasm-publish
+    // put in index.html.
     //
-    // UseBlazorFrameworkFiles() is intentionally omitted: it uses the BFF's
-    // compiled-in static-web-assets manifest which has DIFFERENT fingerprints than
-    // the wasm-publish files (two separate dotnet publish runs). If it were enabled,
-    // it would intercept _framework/* requests and return 500 for fingerprints it
-    // doesn't recognise, and serve a stale blazor.boot.json causing the preload
-    // fingerprint mismatch warning.
+    // UseStaticFiles() serves physical files from /app/wwwroot (populated by the
+    // Dockerfile: source wwwroot files + wasm-publish output).
     //
-    // .wasm files need the application/wasm content type for the browser to accept
-    // them; the default provider in ASP.NET Core includes this mapping.
-    // UseStaticFiles serves physical files from /app/wwwroot (populated by the
-    // Dockerfile cp + COPY steps: source wwwroot files + wasm-publish output).
-    app.UseStaticFiles();
+    // By default UseStaticFiles silently skips files whose extension isn't in the
+    // MIME registry (it calls next() rather than returning 404). Blazor WASM uses
+    // several non-standard extensions: .dat (ICU data), .dll (app assemblies),
+    // .blat (satellite resources), .pdb (debug symbols). Without explicit mappings,
+    // requests for these fall through to MapFallbackToFile which returns index.html
+    // (wrong content), causing the WASM runtime to fail after the loading bar.
+    // ServeUnknownFileTypes = true ensures every physical file in wwwroot is served.
+    var wasmContentTypes = new FileExtensionContentTypeProvider();
+    wasmContentTypes.Mappings[".dat"]  = "application/octet-stream";
+    wasmContentTypes.Mappings[".dll"]  = "application/octet-stream";
+    wasmContentTypes.Mappings[".blat"] = "application/octet-stream";
+    wasmContentTypes.Mappings[".pdb"]  = "application/octet-stream";
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        ContentTypeProvider  = wasmContentTypes,
+        ServeUnknownFileTypes = true,
+        DefaultContentType   = "application/octet-stream",
+    });
 
     // MapStaticAssets serves compressed files from the BFF's static-web-assets
-    // manifest. This is required for files that dotnet publish only emits as
-    // compressed variants (e.g. _framework/icudt_EFIGS.*.dat is published as
-    // .dat.br only — UseStaticFiles() would 404 it). The BFF manifest fingerprints
-    // match the wasm-publish fingerprints because both builds use the same SDK
-    // version and NuGet packages (same file content → same SHA256 fingerprint).
-    //
-    // UseBlazorFrameworkFiles() is intentionally absent — it caused 500s by
-    // intercepting _framework/* requests using a manifest-backed provider that
-    // failed to match files it should have passed through.
+    // manifest. This is required for files that dotnet publish for Blazor WASM
+    // emits as compressed-only variants (e.g. .dll.br, .dat.br): UseStaticFiles
+    // sees no matching physical file and falls through; MapStaticAssets serves
+    // the .br variant with Content-Encoding: br.
     app.MapStaticAssets();
 
     app.MapControllers();

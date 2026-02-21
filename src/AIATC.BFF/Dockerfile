@@ -61,7 +61,11 @@ COPY --from=wasm-publish /wasm/publish/wwwroot /app/publish/wwwroot
 
 RUN echo "=== Final BFF wwwroot (excl _framework) ===" \
     && find /app/publish/wwwroot -not -path '*/_framework/*' | sort \
-    && echo "=== _framework file count ===" \
+    && echo "=== lib/ bootstrap present ===" \
+    && (find /app/publish/wwwroot/lib -name "bootstrap.min.css" | head -3 || echo "NOT FOUND") \
+    && echo "=== ICU dat files in _framework ===" \
+    && (find /app/publish/wwwroot/_framework -name "*dat*" | sort || echo "NONE") \
+    && echo "=== _framework total file count ===" \
     && find /app/publish/wwwroot/_framework -type f | wc -l
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
