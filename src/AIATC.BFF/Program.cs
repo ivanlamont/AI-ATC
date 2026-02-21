@@ -82,6 +82,15 @@ try
     };
     forwardedHeadersOptions.KnownNetworks.Clear();
     forwardedHeadersOptions.KnownProxies.Clear();
+    // Log index.html availability at startup so the ACA log stream immediately
+    // shows whether the file is physically present in the publish wwwroot.
+    var webRoot = app.Environment.WebRootPath ?? "(null)";
+    var indexPhysical = File.Exists(Path.Combine(webRoot, "index.html"));
+    var indexProvider = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
+    app.Logger.LogInformation(
+        "WebRootPath={WebRootPath} | index.html physical={Physical} provider={Provider}",
+        webRoot, indexPhysical, indexProvider);
+
     app.UseForwardedHeaders(forwardedHeadersOptions);
 
     app.UseSession();
@@ -117,8 +126,54 @@ try
 
     app.MapControllers();
 
-    // All unmatched routes fall back to index.html so the Blazor router takes over
-    app.MapFallbackToFile("index.html");
+    // ── Blazor SPA fallback ────────────────────────────────────────────────────
+    //
+    // In .NET 10 Production mode, WASM wwwroot files (including index.html) live
+    // in the static-web-assets manifest and are served by MapStaticAssets().
+    // MapFallbackToFile("index.html") relies on IWebHostEnvironment.WebRootFileProvider
+    // which in Production only covers the PHYSICAL wwwroot directory. If index.html
+    // is not physically copied there at publish time, it returns 404 for every
+    // Blazor client-side route (/, /simulation, /challenge-mode, etc.).
+    //
+    // This explicit MapFallback:
+    //   1. Logs where it looked (visible in the ACA log stream — very helpful).
+    //   2. Reads index.html directly from the physical publish output path.
+    //   3. Falls back to IWebHostEnvironment.WebRootFileProvider (which may
+    //      include the manifest-based provider depending on .NET version/config).
+    app.MapFallback(async (HttpContext ctx) =>
+    {
+        var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        var logger = ctx.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("AIATC.BFF.SpaFallback");
+
+        // Strategy 1: physical file at <WebRootPath>/index.html
+        var physicalPath = Path.Combine(env.WebRootPath ?? string.Empty, "index.html");
+        if (File.Exists(physicalPath))
+        {
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            await ctx.Response.SendFileAsync(physicalPath);
+            return;
+        }
+
+        // Strategy 2: IWebHostEnvironment.WebRootFileProvider (may include manifest)
+        var fileInfo = env.WebRootFileProvider.GetFileInfo("index.html");
+        if (fileInfo.Exists)
+        {
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            await ctx.Response.SendFileAsync(fileInfo);
+            return;
+        }
+
+        logger.LogError(
+            "index.html not found. WebRootPath={WebRootPath} Physical={Physical} Provider={Provider}",
+            env.WebRootPath,
+            File.Exists(physicalPath),
+            fileInfo.Exists);
+
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        await ctx.Response.WriteAsync("index.html not found");
+    });
 
     app.Run();
 }
