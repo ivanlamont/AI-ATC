@@ -2,6 +2,7 @@ using AIATC.BFF;
 using AIATC.BFF.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Routing;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -82,15 +83,6 @@ try
     };
     forwardedHeadersOptions.KnownNetworks.Clear();
     forwardedHeadersOptions.KnownProxies.Clear();
-    // Log index.html availability at startup so the ACA log stream immediately
-    // shows whether the file is physically present in the publish wwwroot.
-    var webRoot = app.Environment.WebRootPath ?? "(null)";
-    var indexPhysical = File.Exists(Path.Combine(webRoot, "index.html"));
-    var indexProvider = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
-    app.Logger.LogInformation(
-        "WebRootPath={WebRootPath} | index.html physical={Physical} provider={Provider}",
-        webRoot, indexPhysical, indexProvider);
-
     app.UseForwardedHeaders(forwardedHeadersOptions);
 
     app.UseSession();
@@ -101,25 +93,22 @@ try
     // exactly what status code is returned for each path.
     app.UseSerilogRequestLogging();
 
-    // ── Minimal-API endpoints registered BEFORE static-file middleware ──────────
+    // ── Minimal-API endpoints ──────────────────────────────────────────────────
     //
     // /healthz — dedicated liveness/readiness probe target. Always returns 200.
-    // Using a minimal API keeps this completely independent of MVC, sessions,
-    // auth, and static-file pipelines. Update the Container App probe path to
-    // /healthz in the Azure Portal or by re-running infra/main.bicep.
     app.MapGet("/healthz", () => "healthy");
 
     // /favicon.ico — browsers request this automatically. The WASM project uses
-    // favicon.png so no .ico file exists. Redirect to the actual file so the
-    // browser gets the icon and ACA never times out on the request.
+    // favicon.png so no .ico file exists. Redirect to the actual file.
     app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png", permanent: true));
 
     // ── Static file serving ────────────────────────────────────────────────────
     //
     // UseBlazorFrameworkFiles handles /_framework/* (the WASM runtime).
-    // MapStaticAssets serves everything else in wwwroot (js/, css/, appsettings.json, etc.)
-    // via the .NET 10 static-web-assets manifest — UseStaticFiles() alone is insufficient
-    // because WASM wwwroot files are only in the manifest, not physically copied to wwwroot.
+    // MapStaticAssets serves everything else via the .NET 10 static-web-assets
+    // manifest. In Production, WASM wwwroot files are NOT physically copied to
+    // /app/wwwroot — they exist only in the manifest. MapStaticAssets() is the
+    // only way to serve them.
     app.UseBlazorFrameworkFiles();
     app.UseStaticFiles();     // serves any BFF-owned physical wwwroot files
     app.MapStaticAssets();    // serves WASM project wwwroot files from the assets manifest
@@ -128,51 +117,51 @@ try
 
     // ── Blazor SPA fallback ────────────────────────────────────────────────────
     //
-    // In .NET 10 Production mode, WASM wwwroot files (including index.html) live
-    // in the static-web-assets manifest and are served by MapStaticAssets().
-    // MapFallbackToFile("index.html") relies on IWebHostEnvironment.WebRootFileProvider
-    // which in Production only covers the PHYSICAL wwwroot directory. If index.html
-    // is not physically copied there at publish time, it returns 404 for every
-    // Blazor client-side route (/, /simulation, /challenge-mode, etc.).
+    // In .NET 10 Production, index.html lives only in the static-web-assets
+    // manifest (Physical=False, Provider=False confirmed in logs). The only way
+    // to serve it is via the MapStaticAssets() endpoint for "/index.html".
     //
-    // This explicit MapFallback:
-    //   1. Logs where it looked (visible in the ACA log stream — very helpful).
-    //   2. Reads index.html directly from the physical publish output path.
-    //   3. Falls back to IWebHostEnvironment.WebRootFileProvider (which may
-    //      include the manifest-based provider depending on .NET version/config).
+    // Strategy: capture app.DataSources (the same ICollection<EndpointDataSource>
+    // that MapStaticAssets() populates), then find the RouteEndpoint whose pattern
+    // is "index.html" and invoke its RequestDelegate directly for every unmatched
+    // Blazor client-side route (/, /simulation, /challenge-mode, etc.).
+    var blazorEndpoints = app.DataSources;
+
     app.MapFallback(async (HttpContext ctx) =>
     {
-        var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        var indexEndpoint = blazorEndpoints
+            .SelectMany(ds => ds.Endpoints)
+            .OfType<RouteEndpoint>()
+            .FirstOrDefault(e => string.Equals(
+                e.RoutePattern.RawText?.TrimStart('/'), "index.html",
+                StringComparison.OrdinalIgnoreCase));
+
+        if (indexEndpoint?.RequestDelegate is RequestDelegate rd)
+        {
+            // Rewrite path so the static-assets delegate serves the right file;
+            // set the endpoint so downstream middleware has correct context.
+            ctx.Request.Path = "/index.html";
+            ctx.SetEndpoint(indexEndpoint);
+            await rd(ctx);
+            return;
+        }
+
+        // If we reach here MapStaticAssets() didn't register /index.html.
+        // Log available routes to diagnose the publish pipeline.
         var logger = ctx.RequestServices
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger("AIATC.BFF.SpaFallback");
 
-        // Strategy 1: physical file at <WebRootPath>/index.html
-        var physicalPath = Path.Combine(env.WebRootPath ?? string.Empty, "index.html");
-        if (File.Exists(physicalPath))
-        {
-            ctx.Response.ContentType = "text/html; charset=utf-8";
-            await ctx.Response.SendFileAsync(physicalPath);
-            return;
-        }
-
-        // Strategy 2: IWebHostEnvironment.WebRootFileProvider (may include manifest)
-        var fileInfo = env.WebRootFileProvider.GetFileInfo("index.html");
-        if (fileInfo.Exists)
-        {
-            ctx.Response.ContentType = "text/html; charset=utf-8";
-            await ctx.Response.SendFileAsync(fileInfo);
-            return;
-        }
-
         logger.LogError(
-            "index.html not found. WebRootPath={WebRootPath} Physical={Physical} Provider={Provider}",
-            env.WebRootPath,
-            File.Exists(physicalPath),
-            fileInfo.Exists);
+            "index.html endpoint not found in MapStaticAssets(). Registered routes: {Routes}",
+            string.Join(", ", blazorEndpoints
+                .SelectMany(ds => ds.Endpoints)
+                .OfType<RouteEndpoint>()
+                .Take(30)
+                .Select(e => e.RoutePattern.RawText)));
 
         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-        await ctx.Response.WriteAsync("index.html not found");
+        await ctx.Response.WriteAsync("index.html not found in static web assets manifest");
     });
 
     app.Run();
