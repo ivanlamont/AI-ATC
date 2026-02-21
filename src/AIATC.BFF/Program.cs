@@ -103,14 +103,23 @@ try
 
     // ── Static file serving ────────────────────────────────────────────────────
     //
-    // UseBlazorFrameworkFiles handles /_framework/* (the WASM runtime).
-    // MapStaticAssets serves everything else via the .NET 10 static-web-assets
-    // manifest. In Production, WASM wwwroot files are NOT physically copied to
-    // /app/wwwroot — they exist only in the manifest. MapStaticAssets() is the
-    // only way to serve them.
-    app.UseBlazorFrameworkFiles();
-    app.UseStaticFiles();     // serves any BFF-owned physical wwwroot files
-    app.MapStaticAssets();    // serves WASM project wwwroot files from the assets manifest
+    // All WASM static files (including _framework/*) are physical files in
+    // /app/wwwroot, copied there by the Dockerfile from the standalone wasm-publish
+    // stage. UseStaticFiles() serves them all via the PhysicalFileProvider.
+    //
+    // UseBlazorFrameworkFiles() is intentionally omitted: it uses the BFF's
+    // compiled-in static-web-assets manifest which has DIFFERENT fingerprints than
+    // the wasm-publish files (two separate dotnet publish runs). If it were enabled,
+    // it would intercept _framework/* requests and return 500 for fingerprints it
+    // doesn't recognise, and serve a stale blazor.boot.json causing the preload
+    // fingerprint mismatch warning.
+    //
+    // .wasm files need the application/wasm content type for the browser to accept
+    // them; the default provider in ASP.NET Core includes this mapping.
+    app.UseStaticFiles();
+    // MapStaticAssets is omitted: all assets are physical files served above.
+    // Keeping it would create BFF-manifest endpoints with wrong fingerprints that
+    // could conflict with the physically-served wasm-publish files.
 
     app.MapControllers();
 

@@ -24,9 +24,13 @@ COPY src/AIATC.ScenarioService ./src/AIATC.ScenarioService
 # (fingerprint placeholders resolved, import map populated). This does NOT happen
 # when the WASM project is only *built* as a Private="false" dependency of the BFF.
 FROM build AS wasm-publish
-RUN dotnet publish "src/AIATC.Web/AIATC.Web.csproj" -c Release -o /wasm/publish \
-    && echo "=== Processed index.html (first 35 lines) ===" \
-    && head -35 /wasm/publish/wwwroot/index.html
+RUN dotnet publish "src/AIATC.Web/AIATC.Web.csproj" -c Release -o /wasm/publish
+RUN echo "=== Processed index.html ===" \
+    && head -40 /wasm/publish/wwwroot/index.html \
+    && echo "=== wasm-publish wwwroot top-level ===" \
+    && find /wasm/publish/wwwroot -maxdepth 2 -not -path '*/_framework/*' | sort \
+    && echo "=== _framework file count ===" \
+    && find /wasm/publish/wwwroot/_framework -type f | wc -l
 
 # ── Stage: publish ────────────────────────────────────────────────────────────
 FROM build AS publish
@@ -43,6 +47,12 @@ RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish
 # wasm-publish copies; MapStaticAssets() endpoints are a secondary path that
 # only matters for paths not found physically.
 COPY --from=wasm-publish /wasm/publish/wwwroot /app/publish/wwwroot
+RUN echo "=== Final BFF wwwroot top-level ===" \
+    && find /app/publish/wwwroot -maxdepth 2 -not -path '*/_framework/*' | sort \
+    && echo "=== bootstrap.min.css present ===" \
+    && ls -la /app/publish/wwwroot/lib/bootstrap/dist/css/bootstrap.min.css 2>&1 \
+    && echo "=== _framework file count ===" \
+    && find /app/publish/wwwroot/_framework -type f | wc -l
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
