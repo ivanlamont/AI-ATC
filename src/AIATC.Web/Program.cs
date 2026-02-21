@@ -17,12 +17,6 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
-var environment = builder.HostEnvironment.Environment;
-
-builder.Configuration
-    .AddJsonFile("wwwroot/appsettings.json", optional: true, reloadOnChange: true)
-    .AddJsonFile($"wwwroot/appsettings.{environment}.json", optional: true, reloadOnChange: true);
-
 builder.Services.AddSingleton(builder.Configuration);
 
 // Domain services
