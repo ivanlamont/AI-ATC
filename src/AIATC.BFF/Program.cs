@@ -88,7 +88,25 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // Serve the Blazor WASM static files (produced by the ProjectReference to AIATC.Web).
+    // Log every HTTP request (including health probe hits) so we can see
+    // exactly what status code is returned for each path.
+    app.UseSerilogRequestLogging();
+
+    // ── Minimal-API endpoints registered BEFORE static-file middleware ──────────
+    //
+    // /healthz — dedicated liveness/readiness probe target. Always returns 200.
+    // Using a minimal API keeps this completely independent of MVC, sessions,
+    // auth, and static-file pipelines. Update the Container App probe path to
+    // /healthz in the Azure Portal or by re-running infra/main.bicep.
+    app.MapGet("/healthz", () => "healthy");
+
+    // /favicon.ico — browsers request this automatically. The WASM project uses
+    // favicon.png so no .ico file exists. Redirect to the actual file so the
+    // browser gets the icon and ACA never times out on the request.
+    app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png", permanent: true));
+
+    // ── Static file serving ────────────────────────────────────────────────────
+    //
     // UseBlazorFrameworkFiles handles /_framework/* (the WASM runtime).
     // MapStaticAssets serves everything else in wwwroot (js/, css/, appsettings.json, etc.)
     // via the .NET 10 static-web-assets manifest — UseStaticFiles() alone is insufficient
