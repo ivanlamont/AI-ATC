@@ -32,10 +32,17 @@ RUN dotnet publish "src/AIATC.Web/AIATC.Web.csproj" -c Release -o /wasm/publish 
 FROM build AS publish
 RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish
 
-# Private="false" on the ProjectReference suppresses the SDK target that would
-# normally copy the processed index.html into the BFF wwwroot. Copy it from the
-# dedicated wasm-publish stage instead.
-COPY --from=wasm-publish /wasm/publish/wwwroot/index.html /app/publish/wwwroot/index.html
+# Copy the ENTIRE WASM publish wwwroot into the BFF wwwroot so that every file
+# referenced by index.html (framework JS, WASM binaries, CSS, JS) comes from the
+# SAME publish run and therefore has matching fingerprints.
+#
+# Private="false" on the ProjectReference means the BFF's own publish doesn't
+# run AIATC.Web's publish targets, so its MapStaticAssets() endpoints may carry
+# different fingerprints than what the standalone wasm-publish produced.
+# UseStaticFiles() (physical files, runs before endpoint routing) will serve the
+# wasm-publish copies; MapStaticAssets() endpoints are a secondary path that
+# only matters for paths not found physically.
+COPY --from=wasm-publish /wasm/publish/wwwroot /app/publish/wwwroot
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
