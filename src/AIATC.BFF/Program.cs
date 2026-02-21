@@ -117,51 +117,89 @@ try
 
     // ── Blazor SPA fallback ────────────────────────────────────────────────────
     //
-    // In .NET 10 Production, index.html lives only in the static-web-assets
-    // manifest (Physical=False, Provider=False confirmed in logs). The only way
-    // to serve it is via the MapStaticAssets() endpoint for "/index.html".
-    //
-    // Strategy: capture app.DataSources (the same ICollection<EndpointDataSource>
-    // that MapStaticAssets() populates), then find the RouteEndpoint whose pattern
-    // is "index.html" and invoke its RequestDelegate directly for every unmatched
-    // Blazor client-side route (/, /simulation, /challenge-mode, etc.).
-    var blazorEndpoints = ((IEndpointRouteBuilder)app).DataSources;
+    // Diagnostic version: tries three strategies to serve index.html, and dumps
+    // full endpoint/file-provider info to the response body if all three fail.
+    // Once we can see what is actually registered we will simplify this.
+    var appDataSources = ((IEndpointRouteBuilder)app).DataSources;
 
     app.MapFallback(async (HttpContext ctx) =>
     {
-        var indexEndpoint = blazorEndpoints
+        // ── Strategy 1: find index.html RouteEndpoint via IEndpointRouteBuilder.DataSources
+        var indexEndpoint = appDataSources
             .SelectMany(ds => ds.Endpoints)
             .OfType<RouteEndpoint>()
             .FirstOrDefault(e => string.Equals(
                 e.RoutePattern.RawText?.TrimStart('/'), "index.html",
                 StringComparison.OrdinalIgnoreCase));
 
-        if (indexEndpoint?.RequestDelegate is RequestDelegate rd)
+        if (indexEndpoint?.RequestDelegate is RequestDelegate rd1)
         {
-            // Rewrite path so the static-assets delegate serves the right file;
-            // set the endpoint so downstream middleware has correct context.
             ctx.Request.Path = "/index.html";
             ctx.SetEndpoint(indexEndpoint);
-            await rd(ctx);
+            await rd1(ctx);
             return;
         }
 
-        // If we reach here MapStaticAssets() didn't register /index.html.
-        // Log available routes to diagnose the publish pipeline.
-        var logger = ctx.RequestServices
-            .GetRequiredService<ILoggerFactory>()
-            .CreateLogger("AIATC.BFF.SpaFallback");
-
-        logger.LogError(
-            "index.html endpoint not found in MapStaticAssets(). Registered routes: {Routes}",
-            string.Join(", ", blazorEndpoints
-                .SelectMany(ds => ds.Endpoints)
+        // ── Strategy 2: find via DI-registered CompositeEndpointDataSource
+        var compositeSource = ctx.RequestServices.GetService<EndpointDataSource>();
+        if (compositeSource is not null)
+        {
+            var ep2 = compositeSource.Endpoints
                 .OfType<RouteEndpoint>()
-                .Take(30)
-                .Select(e => e.RoutePattern.RawText)));
+                .FirstOrDefault(e => string.Equals(
+                    e.RoutePattern.RawText?.TrimStart('/'), "index.html",
+                    StringComparison.OrdinalIgnoreCase));
+            if (ep2?.RequestDelegate is RequestDelegate rd2)
+            {
+                ctx.Request.Path = "/index.html";
+                ctx.SetEndpoint(ep2);
+                await rd2(ctx);
+                return;
+            }
+        }
 
-        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-        await ctx.Response.WriteAsync("index.html not found in static web assets manifest");
+        // ── Strategy 3: WebRootFileProvider (works if UseBlazorFrameworkFiles()
+        //    extended the provider to include WASM wwwroot files)
+        var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        var fi = env.WebRootFileProvider.GetFileInfo("index.html");
+        if (fi.Exists && !fi.IsDirectory)
+        {
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            await ctx.Response.SendFileAsync(fi);
+            return;
+        }
+
+        // ── All strategies failed — dump diagnostic info so we can see exactly
+        //    what is registered without needing to open Azure log stream.
+        var allFromDataSources  = appDataSources.SelectMany(ds => ds.Endpoints).ToList();
+        var allFromComposite    = compositeSource?.Endpoints.ToList() ?? [];
+        var routeFromDataSrc    = allFromDataSources.OfType<RouteEndpoint>().ToList();
+        var routeFromComposite  = allFromComposite.OfType<RouteEndpoint>().ToList();
+
+        ctx.Response.StatusCode  = StatusCodes.Status200OK; // 200 so body is visible in browser
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        await ctx.Response.WriteAsync("=== SPA Fallback Diagnostic ===\n\n");
+
+        await ctx.Response.WriteAsync($"appDataSources.Count : {appDataSources.Count}\n");
+        foreach (var ds in appDataSources)
+            await ctx.Response.WriteAsync($"  {ds.GetType().Name}: {ds.Endpoints.Count} endpoints\n");
+
+        await ctx.Response.WriteAsync($"\nRouteEndpoints from appDataSources ({routeFromDataSrc.Count}):\n");
+        foreach (var e in routeFromDataSrc.Take(60))
+            await ctx.Response.WriteAsync($"  Pattern='{e.RoutePattern.RawText}' | Display='{e.DisplayName}'\n");
+
+        await ctx.Response.WriteAsync($"\nNon-RouteEndpoints from appDataSources:\n");
+        foreach (var e in allFromDataSources.Where(x => x is not RouteEndpoint).Take(10))
+            await ctx.Response.WriteAsync($"  {e.GetType().Name}: '{e.DisplayName}'\n");
+
+        await ctx.Response.WriteAsync($"\nCompositeEndpointDataSource type : {compositeSource?.GetType().Name ?? "null"}\n");
+        await ctx.Response.WriteAsync($"RouteEndpoints from composite ({routeFromComposite.Count}):\n");
+        foreach (var e in routeFromComposite.Take(60))
+            await ctx.Response.WriteAsync($"  Pattern='{e.RoutePattern.RawText}' | Display='{e.DisplayName}'\n");
+
+        await ctx.Response.WriteAsync($"\nWebRootFileProvider: {env.WebRootFileProvider.GetType().Name}\n");
+        await ctx.Response.WriteAsync($"index.html via provider: Exists={fi.Exists}\n");
+        await ctx.Response.WriteAsync($"WebRootPath: {env.WebRootPath}\n");
     });
 
     app.Run();
