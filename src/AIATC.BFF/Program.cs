@@ -124,82 +124,61 @@ try
 
     app.MapFallback(async (HttpContext ctx) =>
     {
-        // ── Strategy 1: find index.html RouteEndpoint via IEndpointRouteBuilder.DataSources
-        var indexEndpoint = appDataSources
+        var allRouteEndpoints = appDataSources
             .SelectMany(ds => ds.Endpoints)
             .OfType<RouteEndpoint>()
-            .FirstOrDefault(e => string.Equals(
-                e.RoutePattern.RawText?.TrimStart('/'), "index.html",
-                StringComparison.OrdinalIgnoreCase));
+            .ToList();
 
-        if (indexEndpoint?.RequestDelegate is RequestDelegate rd1)
+        // ── Strategy 1: exact match "index.html"
+        var indexEndpoint = allRouteEndpoints.FirstOrDefault(e => string.Equals(
+            e.RoutePattern.RawText?.TrimStart('/'), "index.html",
+            StringComparison.OrdinalIgnoreCase));
+
+        // ── Strategy 2: fingerprinted match — e.g. "index.abc123.html"
+        //    (In .NET 10 the HTML entry-point may be content-addressed just like CSS)
+        indexEndpoint ??= allRouteEndpoints.FirstOrDefault(e =>
         {
-            ctx.Request.Path = "/index.html";
+            var p = e.RoutePattern.RawText?.TrimStart('/');
+            return p is not null
+                && p.StartsWith("index", StringComparison.OrdinalIgnoreCase)
+                && p.EndsWith(".html",   StringComparison.OrdinalIgnoreCase)
+                && !p.EndsWith(".html.br", StringComparison.OrdinalIgnoreCase)
+                && !p.EndsWith(".html.gz", StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (indexEndpoint?.RequestDelegate is RequestDelegate rd)
+        {
+            ctx.Request.Path = "/" + indexEndpoint.RoutePattern.RawText?.TrimStart('/');
             ctx.SetEndpoint(indexEndpoint);
-            await rd1(ctx);
+            await rd(ctx);
             return;
         }
 
-        // ── Strategy 2: find via DI-registered CompositeEndpointDataSource
-        var compositeSource = ctx.RequestServices.GetService<EndpointDataSource>();
-        if (compositeSource is not null)
-        {
-            var ep2 = compositeSource.Endpoints
-                .OfType<RouteEndpoint>()
-                .FirstOrDefault(e => string.Equals(
-                    e.RoutePattern.RawText?.TrimStart('/'), "index.html",
-                    StringComparison.OrdinalIgnoreCase));
-            if (ep2?.RequestDelegate is RequestDelegate rd2)
-            {
-                ctx.Request.Path = "/index.html";
-                ctx.SetEndpoint(ep2);
-                await rd2(ctx);
-                return;
-            }
-        }
+        // ── All strategies failed: show diagnostic so we can see what HTML
+        //    endpoints actually exist and fix the pattern match.
+        var htmlEndpoints = allRouteEndpoints
+            .Where(e => e.RoutePattern.RawText?.EndsWith(".html",
+                StringComparison.OrdinalIgnoreCase) == true)
+            .ToList();
 
-        // ── Strategy 3: WebRootFileProvider (works if UseBlazorFrameworkFiles()
-        //    extended the provider to include WASM wwwroot files)
         var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
-        var fi = env.WebRootFileProvider.GetFileInfo("index.html");
-        if (fi.Exists && !fi.IsDirectory)
-        {
-            ctx.Response.ContentType = "text/html; charset=utf-8";
-            await ctx.Response.SendFileAsync(fi);
-            return;
-        }
+        var fi  = env.WebRootFileProvider.GetFileInfo("index.html");
 
-        // ── All strategies failed — dump diagnostic info so we can see exactly
-        //    what is registered without needing to open Azure log stream.
-        var allFromDataSources  = appDataSources.SelectMany(ds => ds.Endpoints).ToList();
-        var allFromComposite    = compositeSource?.Endpoints.ToList() ?? [];
-        var routeFromDataSrc    = allFromDataSources.OfType<RouteEndpoint>().ToList();
-        var routeFromComposite  = allFromComposite.OfType<RouteEndpoint>().ToList();
-
-        ctx.Response.StatusCode  = StatusCodes.Status200OK; // 200 so body is visible in browser
+        ctx.Response.StatusCode  = StatusCodes.Status200OK;
         ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("=== SPA Fallback Diagnostic ===\n\n");
+        await ctx.Response.WriteAsync("=== SPA Fallback Diagnostic (pass 2) ===\n\n");
+        await ctx.Response.WriteAsync($"Total RouteEndpoints : {allRouteEndpoints.Count}\n\n");
 
-        await ctx.Response.WriteAsync($"appDataSources.Count : {appDataSources.Count}\n");
-        foreach (var ds in appDataSources)
-            await ctx.Response.WriteAsync($"  {ds.GetType().Name}: {ds.Endpoints.Count} endpoints\n");
+        await ctx.Response.WriteAsync($"All *.html endpoints ({htmlEndpoints.Count}):\n");
+        foreach (var e in htmlEndpoints)
+            await ctx.Response.WriteAsync($"  '{e.RoutePattern.RawText}'\n");
 
-        await ctx.Response.WriteAsync($"\nRouteEndpoints from appDataSources ({routeFromDataSrc.Count}):\n");
-        foreach (var e in routeFromDataSrc.Take(60))
-            await ctx.Response.WriteAsync($"  Pattern='{e.RoutePattern.RawText}' | Display='{e.DisplayName}'\n");
+        if (htmlEndpoints.Count == 0)
+            await ctx.Response.WriteAsync("  (none — index.html is not in the static-assets manifest)\n");
 
-        await ctx.Response.WriteAsync($"\nNon-RouteEndpoints from appDataSources:\n");
-        foreach (var e in allFromDataSources.Where(x => x is not RouteEndpoint).Take(10))
-            await ctx.Response.WriteAsync($"  {e.GetType().Name}: '{e.DisplayName}'\n");
-
-        await ctx.Response.WriteAsync($"\nCompositeEndpointDataSource type : {compositeSource?.GetType().Name ?? "null"}\n");
-        await ctx.Response.WriteAsync($"RouteEndpoints from composite ({routeFromComposite.Count}):\n");
-        foreach (var e in routeFromComposite.Take(60))
-            await ctx.Response.WriteAsync($"  Pattern='{e.RoutePattern.RawText}' | Display='{e.DisplayName}'\n");
-
-        await ctx.Response.WriteAsync($"\nWebRootFileProvider: {env.WebRootFileProvider.GetType().Name}\n");
-        await ctx.Response.WriteAsync($"index.html via provider: Exists={fi.Exists}\n");
-        await ctx.Response.WriteAsync($"WebRootPath: {env.WebRootPath}\n");
+        await ctx.Response.WriteAsync($"\nWebRootFileProvider : {env.WebRootFileProvider.GetType().Name}\n");
+        await ctx.Response.WriteAsync($"index.html Exists   : {fi.Exists}\n");
+        await ctx.Response.WriteAsync($"WebRootPath         : {env.WebRootPath}\n");
     });
 
     app.Run();
