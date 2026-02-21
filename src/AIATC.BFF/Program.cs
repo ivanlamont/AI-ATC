@@ -2,7 +2,6 @@ using AIATC.BFF;
 using AIATC.BFF.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.Routing;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -117,69 +116,11 @@ try
 
     // ── Blazor SPA fallback ────────────────────────────────────────────────────
     //
-    // Diagnostic version: tries three strategies to serve index.html, and dumps
-    // full endpoint/file-provider info to the response body if all three fail.
-    // Once we can see what is actually registered we will simplify this.
-    var appDataSources = ((IEndpointRouteBuilder)app).DataSources;
-
-    app.MapFallback(async (HttpContext ctx) =>
-    {
-        var allRouteEndpoints = appDataSources
-            .SelectMany(ds => ds.Endpoints)
-            .OfType<RouteEndpoint>()
-            .ToList();
-
-        // ── Strategy 1: exact match "index.html"
-        var indexEndpoint = allRouteEndpoints.FirstOrDefault(e => string.Equals(
-            e.RoutePattern.RawText?.TrimStart('/'), "index.html",
-            StringComparison.OrdinalIgnoreCase));
-
-        // ── Strategy 2: fingerprinted match — e.g. "index.abc123.html"
-        //    (In .NET 10 the HTML entry-point may be content-addressed just like CSS)
-        indexEndpoint ??= allRouteEndpoints.FirstOrDefault(e =>
-        {
-            var p = e.RoutePattern.RawText?.TrimStart('/');
-            return p is not null
-                && p.StartsWith("index", StringComparison.OrdinalIgnoreCase)
-                && p.EndsWith(".html",   StringComparison.OrdinalIgnoreCase)
-                && !p.EndsWith(".html.br", StringComparison.OrdinalIgnoreCase)
-                && !p.EndsWith(".html.gz", StringComparison.OrdinalIgnoreCase);
-        });
-
-        if (indexEndpoint?.RequestDelegate is RequestDelegate rd)
-        {
-            ctx.Request.Path = "/" + indexEndpoint.RoutePattern.RawText?.TrimStart('/');
-            ctx.SetEndpoint(indexEndpoint);
-            await rd(ctx);
-            return;
-        }
-
-        // ── All strategies failed: show diagnostic so we can see what HTML
-        //    endpoints actually exist and fix the pattern match.
-        var htmlEndpoints = allRouteEndpoints
-            .Where(e => e.RoutePattern.RawText?.EndsWith(".html",
-                StringComparison.OrdinalIgnoreCase) == true)
-            .ToList();
-
-        var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
-        var fi  = env.WebRootFileProvider.GetFileInfo("index.html");
-
-        ctx.Response.StatusCode  = StatusCodes.Status200OK;
-        ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("=== SPA Fallback Diagnostic (pass 2) ===\n\n");
-        await ctx.Response.WriteAsync($"Total RouteEndpoints : {allRouteEndpoints.Count}\n\n");
-
-        await ctx.Response.WriteAsync($"All *.html endpoints ({htmlEndpoints.Count}):\n");
-        foreach (var e in htmlEndpoints)
-            await ctx.Response.WriteAsync($"  '{e.RoutePattern.RawText}'\n");
-
-        if (htmlEndpoints.Count == 0)
-            await ctx.Response.WriteAsync("  (none — index.html is not in the static-assets manifest)\n");
-
-        await ctx.Response.WriteAsync($"\nWebRootFileProvider : {env.WebRootFileProvider.GetType().Name}\n");
-        await ctx.Response.WriteAsync($"index.html Exists   : {fi.Exists}\n");
-        await ctx.Response.WriteAsync($"WebRootPath         : {env.WebRootPath}\n");
-    });
+    // In .NET 10, index.html is NOT in the static-web-assets manifest — the
+    // Blazor SDK publishes it as a physical file to the BFF's wwwroot/.
+    // MapFallbackToFile serves it for every unmatched client-side route
+    // (/, /simulation, /challenge-mode, etc.) using the physical file provider.
+    app.MapFallbackToFile("index.html");
 
     app.Run();
 }

@@ -15,12 +15,13 @@
 
   <ItemGroup>
     <!--
-      Private="false" ReferenceOutputAssembly="false" means the BFF does not compile
-      the Blazor WASM code; it only causes dotnet publish to emit the WASM static files
-      into this project's wwwroot, so UseBlazorFrameworkFiles() can serve them.
+      ReferenceOutputAssembly="false" tells the compiler not to use AIATC.Web as a
+      C# reference (the WASM app's types are not shared with the BFF).
+      Private="false" was previously set here but suppressed the Blazor SDK target
+      that copies the processed index.html (and other wwwroot files) to the BFF's
+      wwwroot during publish — so it has been removed.
     -->
     <ProjectReference Include="..\AIATC.Web\AIATC.Web.csproj"
-                      Private="false"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 

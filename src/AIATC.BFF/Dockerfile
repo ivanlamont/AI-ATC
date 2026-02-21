@@ -20,7 +20,11 @@ COPY src/AIATC.ScenarioService ./src/AIATC.ScenarioService
 
 # Publish BFF — this also builds and embeds the WASM output via the ProjectReference
 FROM build AS publish
-RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish
+RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish \
+    && echo "=== HTML files in publish output ===" \
+    && find /app/publish -name "*.html" \
+    && echo "=== wwwroot contents ===" \
+    && ls /app/publish/wwwroot/ 2>/dev/null || echo "(wwwroot is empty or missing)"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
