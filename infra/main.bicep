@@ -358,16 +358,23 @@ resource bffApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
         probes: [
           {
+            // /healthz is a minimal API endpoint (no session/auth/static-file pipeline)
+            // that returns 200 in <5 ms. The default probe timeout is 1 second; on a
+            // cold .NET 10 container, MapStaticAssets builds the endpoint routing table
+            // on the first request which can exceed 1 s on 0.5 vCPU — causing false
+            // liveness failures. timeoutSeconds:10 prevents that race.
             type: 'Liveness'
-            httpGet: { path: '/', port: 8080, scheme: 'HTTP' }
+            httpGet: { path: '/healthz', port: 8080, scheme: 'HTTP' }
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 10
           }
           {
             type: 'Readiness'
-            httpGet: { path: '/', port: 8080, scheme: 'HTTP' }
+            httpGet: { path: '/healthz', port: 8080, scheme: 'HTTP' }
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 10
           }
         ]
         env: [
