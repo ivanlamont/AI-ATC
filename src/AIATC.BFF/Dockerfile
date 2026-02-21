@@ -23,12 +23,17 @@ COPY src/AIATC.ScenarioService ./src/AIATC.ScenarioService
 # OverrideBlazorWebAssemblyHtmlAssets and produces a fully-processed index.html
 # (fingerprint placeholders resolved, import map populated). This does NOT happen
 # when the WASM project is only *built* as a Private="false" dependency of the BFF.
+#
+# In .NET 10, dotnet publish for Blazor WASM only puts _framework/ and index.html
+# as physical files in the output wwwroot/. All other assets (lib/, css/, js/) are
+# served via the static-web-assets manifest (MapStaticAssets endpoints), not as
+# physical copies. We handle this in the publish stage below.
 FROM build AS wasm-publish
 RUN dotnet publish "src/AIATC.Web/AIATC.Web.csproj" -c Release -o /wasm/publish
 RUN echo "=== Processed index.html ===" \
     && head -40 /wasm/publish/wwwroot/index.html \
-    && echo "=== wasm-publish wwwroot top-level ===" \
-    && find /wasm/publish/wwwroot -maxdepth 2 -not -path '*/_framework/*' | sort \
+    && echo "=== wasm-publish wwwroot contents (excl _framework) ===" \
+    && find /wasm/publish/wwwroot -not -path '*/_framework/*' | sort \
     && echo "=== _framework file count ===" \
     && find /wasm/publish/wwwroot/_framework -type f | wc -l
 
@@ -36,21 +41,26 @@ RUN echo "=== Processed index.html ===" \
 FROM build AS publish
 RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish
 
-# Copy the ENTIRE WASM publish wwwroot into the BFF wwwroot so that every file
-# referenced by index.html (framework JS, WASM binaries, CSS, JS) comes from the
-# SAME publish run and therefore has matching fingerprints.
+# ── Seed wwwroot with source static files ────────────────────────────────────
 #
-# Private="false" on the ProjectReference means the BFF's own publish doesn't
-# run AIATC.Web's publish targets, so its MapStaticAssets() endpoints may carry
-# different fingerprints than what the standalone wasm-publish produced.
-# UseStaticFiles() (physical files, runs before endpoint routing) will serve the
-# wasm-publish copies; MapStaticAssets() endpoints are a secondary path that
-# only matters for paths not found physically.
+# In .NET 10, dotnet publish for Blazor WASM does NOT copy lib/, css/, js/ as
+# physical files — they're only in the static-web-assets manifest. Because we
+# serve everything via UseStaticFiles() (physical files), we must populate the
+# physical wwwroot ourselves.
+#
+# Step 1: Copy ALL source AIATC.Web wwwroot files (bootstrap, css, js, data,
+#         images, appsettings, source index.html) into the BFF publish output.
+RUN mkdir -p /app/publish/wwwroot \
+    && cp -r src/AIATC.Web/wwwroot/. /app/publish/wwwroot/
+
+# Step 2: Overwrite with wasm-publish output. This replaces the source
+#         index.html (placeholder fingerprints) with the processed version
+#         (resolved fingerprints, populated importmap) and adds _framework/.
+#         docker COPY merges directories; source overwrites on name collision.
 COPY --from=wasm-publish /wasm/publish/wwwroot /app/publish/wwwroot
-RUN echo "=== Final BFF wwwroot top-level ===" \
-    && find /app/publish/wwwroot -maxdepth 2 -not -path '*/_framework/*' | sort \
-    && echo "=== bootstrap.min.css present ===" \
-    && ls -la /app/publish/wwwroot/lib/bootstrap/dist/css/bootstrap.min.css 2>&1 \
+
+RUN echo "=== Final BFF wwwroot (excl _framework) ===" \
+    && find /app/publish/wwwroot -not -path '*/_framework/*' | sort \
     && echo "=== _framework file count ===" \
     && find /app/publish/wwwroot/_framework -type f | wc -l
 
