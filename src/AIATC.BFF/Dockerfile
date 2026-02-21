@@ -20,11 +20,28 @@ COPY src/AIATC.ScenarioService ./src/AIATC.ScenarioService
 
 # Publish BFF — this also builds and embeds the WASM output via the ProjectReference
 FROM build AS publish
-RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish \
-    && echo "=== HTML files in publish output ===" \
-    && find /app/publish -name "*.html" \
-    && echo "=== wwwroot contents ===" \
-    && ls /app/publish/wwwroot/ 2>/dev/null || echo "(wwwroot is empty or missing)"
+RUN dotnet publish "src/AIATC.BFF/AIATC.BFF.csproj" -c Release -o /app/publish
+
+# index.html is NOT copied to BFF wwwroot when Private="false" is set on the
+# ProjectReference (that attribute suppresses the Blazor SDK's hosting copy target).
+# The source wwwroot/index.html has unresolved placeholders (fingerprint hashes,
+# import map); the processed version is written to AIATC.Web's intermediate output
+# by the OverrideBlazorWebAssemblyHtmlAssets target during publish.
+# Find it there and copy it to BFF wwwroot so MapFallbackToFile("index.html") works.
+RUN echo "=== All index.html files in build tree ===" \
+    && find /src/src/AIATC.Web/obj -name "index.html" 2>/dev/null \
+    && echo "=== Copying to wwwroot ===" \
+    && mkdir -p /app/publish/wwwroot \
+    && PROCESSED=$(find /src/src/AIATC.Web/obj/Release -name "index.html" 2>/dev/null | head -1) \
+    && if [ -n "$PROCESSED" ]; then \
+           echo "Using processed: $PROCESSED"; \
+           cp "$PROCESSED" /app/publish/wwwroot/index.html; \
+       else \
+           echo "Processed index.html not found in obj/Release — falling back to source"; \
+           cp /src/src/AIATC.Web/wwwroot/index.html /app/publish/wwwroot/index.html; \
+       fi \
+    && echo "=== Copied index.html (first 35 lines) ===" \
+    && head -35 /app/publish/wwwroot/index.html
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app

@@ -15,13 +15,17 @@
 
   <ItemGroup>
     <!--
-      ReferenceOutputAssembly="false" tells the compiler not to use AIATC.Web as a
-      C# reference (the WASM app's types are not shared with the BFF).
-      Private="false" was previously set here but suppressed the Blazor SDK target
-      that copies the processed index.html (and other wwwroot files) to the BFF's
-      wwwroot during publish — so it has been removed.
+      Private="false" prevents the WASM project's browser-targeting DLLs from being
+      copied into the BFF's publish output (they target the 'browser-wasm' RID and
+      would corrupt the server-side dotnet runtime). ReferenceOutputAssembly="false"
+      prevents AIATC.Web from being added as a C# compile-time reference.
+
+      SIDE EFFECT: Private="false" also suppresses the Blazor SDK target that copies
+      the processed index.html into the BFF wwwroot. We compensate via an explicit
+      'find + cp' step in the Dockerfile after 'dotnet publish' runs.
     -->
     <ProjectReference Include="..\AIATC.Web\AIATC.Web.csproj"
+                      Private="false"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
