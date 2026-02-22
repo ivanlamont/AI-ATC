@@ -27,7 +27,8 @@ public class SpeechRecognitionService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Initializes the speech recognition service
+    /// Initializes the speech recognition service using the browser's Web Speech API.
+    /// Returns false if the browser does not support it; call InitializeAzureAsync afterward as a fallback.
     /// </summary>
     public async Task<bool> InitializeAsync()
     {
@@ -44,6 +45,27 @@ public class SpeechRecognitionService : IAsyncDisposable
         catch (Exception ex)
         {
             SpeechError?.Invoke(this, $"Initialization failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Activates Azure Speech REST API as a fallback for browsers that lack the Web Speech API.
+    /// Must be called after InitializeAsync() (which sets up the JS dotNetRef even when it returns false).
+    /// </summary>
+    public async Task<bool> InitializeAzureAsync(string token, string region)
+    {
+        try
+        {
+            return await _jsRuntime.InvokeAsync<bool>(
+                "speechRecognition.initializeAzure",
+                token,
+                region
+            );
+        }
+        catch (Exception ex)
+        {
+            SpeechError?.Invoke(this, $"Azure speech fallback initialization failed: {ex.Message}");
             return false;
         }
     }

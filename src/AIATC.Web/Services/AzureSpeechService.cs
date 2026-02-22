@@ -36,6 +36,12 @@ public interface IAzureSpeechService
     Task StopContinuousRecognitionAsync();
 
     /// <summary>
+    /// Returns the current speech token and region if available, fetching from the BFF if needed.
+    /// Returns null if Azure Speech is not configured.
+    /// </summary>
+    Task<(string Token, string Region)?> GetOrFetchTokenAsync();
+
+    /// <summary>
     /// Check if aviation vocabulary is loaded
     /// </summary>
     bool IsVocabularyLoaded { get; }
@@ -80,6 +86,19 @@ public class AzureSpeechService : IAzureSpeechService
     /// Get vocabulary statistics
     /// </summary>
     public VocabularyStats? GetVocabularyStats() => _vocabularyService.IsLoaded ? _vocabularyService.GetStats() : null;
+
+    /// <inheritdoc />
+    public async Task<(string Token, string Region)?> GetOrFetchTokenAsync()
+    {
+        if (IsAzureAvailable)
+            return (_speechToken!, _region ?? "eastus");
+
+        var fetched = await FetchSpeechTokenFromBffAsync();
+        if (fetched && !string.IsNullOrEmpty(_speechToken))
+            return (_speechToken, _region ?? "eastus");
+
+        return null;
+    }
 
     public event EventHandler<SpeechRecognitionResult>? SpeechRecognized;
     public event EventHandler<string>? RecognitionUncertain;

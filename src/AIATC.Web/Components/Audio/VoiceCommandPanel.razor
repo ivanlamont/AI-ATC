@@ -2,6 +2,7 @@
 @using AIATC.Domain.Models.Commands
 @using System.Linq
 @inject SpeechRecognitionService SpeechRecognition
+@inject IAzureSpeechService AzureSpeech
 @inject TextToSpeechService TextToSpeech
 @implements IAsyncDisposable
 
@@ -10,7 +11,7 @@
         @if (!_isInitialized)
         {
             <div class="status-warning">
-                <span>⚠️ Voice commands not available in this browser</span>
+                <span>⚠️ Voice commands unavailable — use Chrome/Edge or configure Azure Speech</span>
             </div>
         }
         else if (!_hasPermission)
@@ -112,8 +113,19 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Initialize speech recognition
+        // Try Web Speech API first (Chrome/Edge)
         _isInitialized = await SpeechRecognition.InitializeAsync();
+
+        // If Web Speech API is not available (Firefox, Safari), try Azure Speech fallback
+        if (!_isInitialized)
+        {
+            var tokenInfo = await AzureSpeech.GetOrFetchTokenAsync();
+            if (tokenInfo.HasValue)
+            {
+                _isInitialized = await SpeechRecognition.InitializeAzureAsync(
+                    tokenInfo.Value.Token, tokenInfo.Value.Region);
+            }
+        }
 
         if (_isInitialized)
         {
