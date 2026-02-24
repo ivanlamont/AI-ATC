@@ -5,14 +5,9 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
-
-var environment = builder.Environment;
-
-// Load configuration from appsettings.json (already loaded by CreateDefault, but ensuring it's there)
-builder.Configuration
-    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-    .AddJsonFile($"appsettings.{environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
-    ;
+// Note: appsettings.json and appsettings.{Environment}.json are already loaded by CreateBuilder
+// in the correct order (JSON files BEFORE environment variables), so adding them again here
+// would override environment variable values — do not add them again.
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
