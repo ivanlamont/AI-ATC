@@ -141,7 +141,7 @@ else
     docker run --rm \
         -e PGPASSWORD="$SOURCE_PASSWORD" \
         -v "$DUMP_DIR:/mnt" \
-        postgres:16-alpine \
+        postgres:17-alpine \
         pg_dump \
             -h "$SOURCE_HOST" \
             -p "$SOURCE_PORT" \
@@ -171,7 +171,7 @@ cyan "Step 3: Create '$TARGET_DB' database on Azure PostgreSQL (if not exists)"
 
 docker run --rm \
     -e PGPASSWORD="$TARGET_PASSWORD" \
-    postgres:16-alpine \
+    postgres:17-alpine \
     psql "host=$TARGET_HOST port=5432 dbname=postgres user=$TARGET_USER sslmode=require" \
     -c "SELECT 'CREATE DATABASE $TARGET_DB' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='$TARGET_DB')\gexec" \
 || die "Failed to create database '$TARGET_DB' on '$TARGET_HOST'. Check credentials and network access."
@@ -186,7 +186,7 @@ echo "    This may take several minutes for large datasets..."
 
 docker run --rm -i \
     -e PGPASSWORD="$TARGET_PASSWORD" \
-    postgres:16-alpine \
+    postgres:17-alpine \
     psql "host=$TARGET_HOST port=5432 dbname=$TARGET_DB user=$TARGET_USER sslmode=require" \
 < "$DUMP_FILE" \
 || die "psql restore failed. The dump may have been partially applied — check the output above."
@@ -206,7 +206,7 @@ ORDER BY table_name;"
 
 docker run --rm \
     -e PGPASSWORD="$TARGET_PASSWORD" \
-    postgres:16-alpine \
+    postgres:17-alpine \
     psql "host=$TARGET_HOST port=5432 dbname=$TARGET_DB user=$TARGET_USER sslmode=require" \
     -c "$ROW_COUNT_SQL" \
 && green "Row count verification complete" \

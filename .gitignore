@@ -94,3 +94,6 @@ yarn.lock
 
 # Bicep parameter files contain live secrets when filled in
 infra/main.parameters.json
+
+# ARINC 424 dump file — large (100–500 MB) and contains licensed data
+scripts/arinc424_cycle2508.sql
