@@ -66,38 +66,50 @@ public class FlightAwareService : IFlightAwareService
             return [];
         }
 
-        var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, code);
-
-        if (airport == null)
+        // Try to resolve coordinates from the ARINC 424 reference database.
+        // Fall back to well-known hardcoded values when the DB is not provisioned.
+        (double Lat, double Lon, string DisplayCode)? coords = null;
+        try
         {
-            Log.Warning("Airport {Airport} not found in reference database", code);
-            return [];
+            var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, code);
+            if (airport != null
+                && ArincCoordinateParser.TryParseLatitude(airport.Latitude, out var lat)
+                && ArincCoordinateParser.TryParseLongitude(airport.Longitude, out var lon))
+            {
+                coords = (lat, lon, AirportReferenceLookup.BuildDisplayAirportCode(airport, code));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Reference database unavailable for airport {Airport}; trying well-known fallback", code);
         }
 
-        var hasLat = ArincCoordinateParser.TryParseLatitude(airport.Latitude, out var centerLat);
-        var hasLon = ArincCoordinateParser.TryParseLongitude(airport.Longitude, out var centerLon);
-
-        if (!hasLat || !hasLon)
+        if (coords == null)
         {
-            Log.Warning(
-                "Airport {Airport} has invalid coordinates (lat: {Latitude}, lon: {Longitude})",
-                code, airport.Latitude, airport.Longitude);
-            return [];
+            var fallback = WellKnownAirports.TryGet(code);
+            if (fallback == null)
+            {
+                Log.Warning("Airport {Airport} not found in reference database or well-known list", code);
+                return [];
+            }
+            coords = (fallback.Latitude, fallback.Longitude, fallback.IcaoCode);
+            Log.Information(
+                "Using well-known coordinates for airport {Airport} ({Lat}, {Lon})",
+                code, fallback.Latitude, fallback.Longitude);
         }
 
         Log.Information(
             "Resolved airport {Airport} ({Resolved}) to {Latitude}, {Longitude}; requesting live flights in {RadiusNm} NM",
-            code, AirportReferenceLookup.BuildDisplayAirportCode(airport, code), centerLat, centerLon, radiusNm);
+            code, coords.Value.DisplayCode, coords.Value.Lat, coords.Value.Lon, radiusNm);
 
-        var cacheAirportCode = AirportReferenceLookup.BuildDisplayAirportCode(airport, code);
-        var cacheKey = $"flightaware:airport:{cacheAirportCode}";
+        var cacheKey = $"flightaware:airport:{coords.Value.DisplayCode}";
         if (_memoryCache.TryGetValue<List<AircraftModel>>(cacheKey, out var cachedFlights) && cachedFlights != null)
         {
-            Log.Information("Returning cached live flights for airport {Airport}", cacheAirportCode);
+            Log.Information("Returning cached live flights for airport {Airport}", coords.Value.DisplayCode);
             return cachedFlights;
         }
 
-        var flights = await GetLiveFlightsAsync(centerLat, centerLon, radiusNm);
+        var flights = await GetLiveFlightsAsync(coords.Value.Lat, coords.Value.Lon, radiusNm);
         _memoryCache.Set(cacheKey, flights, new MemoryCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = _airportFlightsCacheDuration

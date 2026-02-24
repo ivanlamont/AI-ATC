@@ -177,10 +177,8 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
 
             var user = await GetOrCreateUserAsync(request.UserId);
 
-            // Get airport data from reference database
-            var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, scenario.AirportCode);
-            var airportLat = ParseLatitude(airport?.Latitude);
-            var airportLon = ParseLongitude(airport?.Longitude);
+            // Get airport data from reference database (with well-known fallback)
+            var (airportLat, airportLon) = await ResolveAirportCoordsAsync(scenario.AirportCode);
 
             // Get initial aircraft positions from FlightAware
             var liveAircraft = await _flightAwareService.GetLiveFlightsForAirportAsync(scenario.AirportCode, 50.0f);
@@ -204,20 +202,17 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
                 ScenarioId = request.ScenarioId
             };
 
-            // Add airport data if found
-            if (airport != null)
+            // Add airport data using well-known fallback when reference DB is unavailable
+            var wellKnown = WellKnownAirports.TryGet(scenario.AirportCode);
+            if (wellKnown != null || (airportLat != 0 || airportLon != 0))
             {
-                var lat = ParseLatitude(airport.Latitude);
-                var lon = ParseLongitude(airport.Longitude);
-                var elev = ParseInt(airport.Elevation);
-
                 response.AirportData = new AirportDataResponse
                 {
-                    IcaoCode = AirportReferenceLookup.BuildDisplayAirportCode(airport, scenario.AirportCode),
-                    Name = airport.AirportName ?? string.Empty,
-                    Latitude = lat,
-                    Longitude = lon,
-                    ElevationFt = elev
+                    IcaoCode = wellKnown?.IcaoCode ?? AirportReferenceLookup.Normalize(scenario.AirportCode),
+                    Name = wellKnown?.Name ?? scenario.AirportCode,
+                    Latitude = airportLat,
+                    Longitude = airportLon,
+                    ElevationFt = wellKnown?.ElevationFt ?? 0
                 };
             }
 
@@ -447,71 +442,108 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
     {
         try
         {
-            var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, request.AirportCode);
-            if (airport == null)
+            // Try the ARINC 424 reference database first; fall back to well-known data when unavailable.
+            AirportDataResponse? dbResponse = null;
+            try
             {
-                throw new RpcException(new Status(StatusCode.NotFound, "Airport not found"));
+                var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, request.AirportCode);
+                if (airport != null)
+                {
+                    var lat = ParseLatitude(airport.Latitude);
+                    var lon = ParseLongitude(airport.Longitude);
+                    var elev = ParseInt(airport.Elevation);
+
+                    var r = new AirportDataResponse
+                    {
+                        IcaoCode = AirportReferenceLookup.BuildDisplayAirportCode(airport, request.AirportCode),
+                        Name = airport.AirportName ?? string.Empty,
+                        Latitude = lat,
+                        Longitude = lon,
+                        ElevationFt = elev
+                    };
+
+                    var runwayCodes = AirportReferenceLookup.BuildRunwayLookupCodes(airport, request.AirportCode);
+                    var runways = await _airspaceDb.Runways
+                        .Where(rw =>
+                            (rw.IcaoCode != null && runwayCodes.Contains(rw.IcaoCode.ToUpper())) ||
+                            (rw.AirportIdentifier != null && runwayCodes.Contains(rw.AirportIdentifier.ToUpper())))
+                        .ToListAsync();
+
+                    var runwayRecords = runways
+                        .Select(rw => new RunwayRecord
+                        {
+                            Identifier = rw.RunwayIdentifier?.Trim() ?? string.Empty,
+                            LengthFt = ParseDouble(rw.RunwayLength),
+                            WidthFt = ParseDouble(rw.Width),
+                            Heading = ParseRunwayBearing(rw.RunwayBearing),
+                            Latitude = ParseLatitude(rw.Latitude, lat),
+                            Longitude = ParseLongitude(rw.Longitude, lon)
+                        })
+                        .ToList();
+
+                    // Keep the closest threshold per designator to the resolved airport, then merge reciprocals.
+                    var deduplicatedRunwayRecords = runwayRecords
+                        .GroupBy(rw => NormalizeRunwayDesignator(rw.Identifier) ?? rw.Identifier.Trim().ToUpperInvariant())
+                        .Select(g => g
+                            .OrderBy(rw => CalculateDistanceNm(lat, lon, rw.Latitude, rw.Longitude))
+                            .First())
+                        .ToList();
+
+                    var groupedRunways = deduplicatedRunwayRecords
+                        .GroupBy(rw => BuildPhysicalRunwayKey(rw.Identifier))
+                        .ToList();
+
+                    foreach (var group in groupedRunways)
+                    {
+                        var merged = MergeRunwayGroup(group.ToList());
+                        r.Runways.Add(new RunwayData
+                        {
+                            Identifier = merged.Identifier,
+                            LengthFt = merged.LengthFt,
+                            WidthFt = merged.WidthFt,
+                            Heading = merged.Heading,
+                            Latitude = merged.Latitude,
+                            Longitude = merged.Longitude
+                        });
+                    }
+
+                    dbResponse = r;
+                }
+            }
+            catch (Exception dbEx)
+            {
+                Log.Warning(dbEx, "Reference database unavailable for airport {Airport}; trying well-known fallback", request.AirportCode);
             }
 
-            var lat = ParseLatitude(airport.Latitude);
-            var lon = ParseLongitude(airport.Longitude);
-            var elev = ParseInt(airport.Elevation);
+            if (dbResponse != null)
+                return dbResponse;
 
+            // Fall back to well-known airport data
+            var fallback = WellKnownAirports.TryGet(request.AirportCode);
+            if (fallback == null)
+                throw new RpcException(new Status(StatusCode.NotFound, "Airport not found"));
+
+            Log.Information("Returning well-known data for airport {Airport}", request.AirportCode);
             var response = new AirportDataResponse
             {
-                IcaoCode = AirportReferenceLookup.BuildDisplayAirportCode(airport, request.AirportCode),
-                Name = airport.AirportName ?? string.Empty,
-                Latitude = lat,
-                Longitude = lon,
-                ElevationFt = elev
+                IcaoCode = fallback.IcaoCode,
+                Name = fallback.Name,
+                Latitude = fallback.Latitude,
+                Longitude = fallback.Longitude,
+                ElevationFt = fallback.ElevationFt
             };
-
-            var runwayCodes = AirportReferenceLookup.BuildRunwayLookupCodes(airport, request.AirportCode);
-            var runways = await _airspaceDb.Runways
-                .Where(r =>
-                    (r.IcaoCode != null && runwayCodes.Contains(r.IcaoCode.ToUpper())) ||
-                    (r.AirportIdentifier != null && runwayCodes.Contains(r.AirportIdentifier.ToUpper())))
-                .ToListAsync();
-
-            var runwayRecords = runways
-                .Select(r => new RunwayRecord
-                {
-                    Identifier = r.RunwayIdentifier?.Trim() ?? string.Empty,
-                    LengthFt = ParseDouble(r.RunwayLength),
-                    WidthFt = ParseDouble(r.Width),
-                    Heading = ParseRunwayBearing(r.RunwayBearing),
-                    Latitude = ParseLatitude(r.Latitude, lat),
-                    Longitude = ParseLongitude(r.Longitude, lon)
-                })
-                .ToList();
-
-            // Runway lookup can still return duplicate identifiers from nearby code collisions.
-            // Keep the closest threshold per designator to the resolved airport, then merge reciprocals.
-            var deduplicatedRunwayRecords = runwayRecords
-                .GroupBy(r => NormalizeRunwayDesignator(r.Identifier) ?? r.Identifier.Trim().ToUpperInvariant())
-                .Select(g => g
-                    .OrderBy(r => CalculateDistanceNm(lat, lon, r.Latitude, r.Longitude))
-                    .First())
-                .ToList();
-
-            var groupedRunways = deduplicatedRunwayRecords
-                .GroupBy(r => BuildPhysicalRunwayKey(r.Identifier))
-                .ToList();
-
-            foreach (var group in groupedRunways)
+            foreach (var rwy in fallback.Runways)
             {
-                var merged = MergeRunwayGroup(group.ToList());
                 response.Runways.Add(new RunwayData
                 {
-                    Identifier = merged.Identifier,
-                    LengthFt = merged.LengthFt,
-                    WidthFt = merged.WidthFt,
-                    Heading = merged.Heading,
-                    Latitude = merged.Latitude,
-                    Longitude = merged.Longitude
+                    Identifier = rwy.Identifier,
+                    LengthFt = rwy.LengthFt,
+                    WidthFt = rwy.WidthFt,
+                    Heading = rwy.Heading,
+                    Latitude = rwy.Latitude,
+                    Longitude = rwy.Longitude
                 });
             }
-
             return response;
         }
         catch (RpcException)
@@ -808,9 +840,7 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
         try
         {
             var aircraft = await _flightAwareService.GetLiveFlightsForAirportAsync(request.AirportCode, request.RadiusNm);
-            var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, request.AirportCode);
-            var airportLat = ParseLatitude(airport?.Latitude);
-            var airportLon = ParseLongitude(airport?.Longitude);
+            var (airportLat, airportLon) = await ResolveAirportCoordsAsync(request.AirportCode);
 
             var response = new InitialAircraftResponse();
             foreach (var ac in aircraft)
@@ -832,9 +862,7 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
         try
         {
             var aircraft = await _flightAwareService.GetLiveFlightsForAirportAsync(request.AirportCode, request.RadiusNm);
-            var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, request.AirportCode);
-            var airportLat = ParseLatitude(airport?.Latitude);
-            var airportLon = ParseLongitude(airport?.Longitude);
+            var (airportLat, airportLon) = await ResolveAirportCoordsAsync(request.AirportCode);
 
             var response = new LiveFlightsResponse();
             foreach (var ac in aircraft)
@@ -988,6 +1016,36 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
             Origin = string.Empty, // Not available in AircraftModel
             Destination = aircraft.Destination?.IcaoCode ?? string.Empty
         };
+    }
+
+    /// <summary>
+    /// Resolves an airport's center coordinates from the ARINC 424 reference DB,
+    /// falling back to well-known hardcoded values when the DB is unavailable.
+    /// Returns (0, 0) if neither source has data.
+    /// </summary>
+    private async Task<(double Lat, double Lon)> ResolveAirportCoordsAsync(string? airportCode)
+    {
+        try
+        {
+            var airport = await AirportReferenceLookup.FindAirportAsync(_airspaceDb, airportCode);
+            if (airport != null)
+            {
+                var lat = ParseLatitude(airport.Latitude);
+                var lon = ParseLongitude(airport.Longitude);
+                if (lat != 0 || lon != 0)
+                    return (lat, lon);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Reference database unavailable for airport {Airport}; using well-known fallback", airportCode);
+        }
+
+        var fallback = WellKnownAirports.TryGet(airportCode ?? string.Empty);
+        if (fallback != null)
+            return (fallback.Latitude, fallback.Longitude);
+
+        return (0, 0);
     }
 
     private static double ParseDouble(string? value, double defaultValue = 0)
