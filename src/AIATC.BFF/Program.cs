@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Serilog;
 using Yarp.ReverseProxy.Configuration;
 
@@ -75,15 +76,43 @@ try
     builder.Services.AddSingleton<SpeechTokenCache>();
 
     // ── DataProtection — persist keys to Postgres so auth cookies survive restarts
-    // and work correctly across multiple replicas. When no DB connection string is
-    // configured (local dev without Postgres) we fall back to the default in-memory
-    // provider, which is fine for development.
+    // and work correctly across multiple replicas.
+    //
+    // We test the connection and create the table BEFORE builder.Build() so that
+    // if Postgres is unavailable (cold start race, misconfiguration, etc.) we fall
+    // back to in-memory keys gracefully rather than crashing the process.
     var pgConnStr = builder.Configuration.GetConnectionString("ScenarioUsageDb");
+    var useDbDataProtection = false;
+
     if (!string.IsNullOrWhiteSpace(pgConnStr))
+    {
+        try
+        {
+            await using var conn = new Npgsql.NpgsqlConnection(pgConnStr);
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS "DataProtectionKeys" (
+                    "Id"           serial NOT NULL,
+                    "FriendlyName" text   NULL,
+                    "Xml"          text   NULL,
+                    CONSTRAINT "PK_DataProtectionKeys" PRIMARY KEY ("Id")
+                )
+                """;
+            await cmd.ExecuteNonQueryAsync();
+            useDbDataProtection = true;
+            Log.Information("DataProtection keys will be persisted to Postgres");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Postgres unavailable for DataProtection; using in-memory keys (sessions will not survive restarts)");
+        }
+    }
+
+    if (useDbDataProtection)
     {
         builder.Services.AddDbContext<BffDbContext>(options =>
             options.UseNpgsql(pgConnStr));
-
         builder.Services
             .AddDataProtection()
             .SetApplicationName("aiatc-bff")
@@ -139,23 +168,6 @@ try
     forwardedHeadersOptions.KnownNetworks.Clear();
     forwardedHeadersOptions.KnownProxies.Clear();
     app.UseForwardedHeaders(forwardedHeadersOptions);
-
-    // Ensure the DataProtectionKeys table exists. Using raw SQL (CREATE TABLE IF
-    // NOT EXISTS) so this is idempotent and doesn't interfere with ScenarioService's
-    // EF migrations that own the rest of the database schema.
-    if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("ScenarioUsageDb")))
-    {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<BffDbContext>();
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "DataProtectionKeys" (
-                "Id"           serial  NOT NULL,
-                "FriendlyName" text    NULL,
-                "Xml"          text    NULL,
-                CONSTRAINT "PK_DataProtectionKeys" PRIMARY KEY ("Id")
-            )
-            """);
-    }
 
     app.UseSession();
     app.UseAuthentication();
