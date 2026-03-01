@@ -31,8 +31,9 @@ builder.Services.AddScoped<TextToSpeechService>();
 builder.Services.AddScoped<AviationVocabularyService>();
 builder.Services.AddScoped<IFlightAwareService, FlightAwareService>();
 
-// ScenarioService gRPC client
-builder.Services.AddScoped<IScenarioServiceClient, ScenarioServiceClient>();
+// ScenarioService gRPC client — proxied through the BFF, no separate URL needed
+builder.Services.AddScoped<IScenarioServiceClient>(_ =>
+    new ScenarioServiceClient(builder.HostEnvironment));
 
 // Azure services
 builder.Services.AddScoped<IAzureConfigurationService, AzureConfigurationService>();

@@ -31,16 +31,15 @@
 //
 // ── After first deploy — add these outputs as GitHub Actions secrets ─────────
 //
-//   ACR_LOGIN_SERVER       ← acrLoginServer output
-//   ACR_NAME               ← acrName output
-//   SCENARIO_SERVICE_URL   ← https://{scenarioServiceHostname output}
+//   ACR_LOGIN_SERVER   ← acrLoginServer output
+//   ACR_NAME           ← acrName output
 //
-//   The CI/CD pipeline injects SCENARIO_SERVICE_URL into the WASM build so the
-//   browser knows where to open its gRPC-Web channel.
-//
-//   The BFF's new production URL is:  https://{bffHostname output}
+//   The BFF's production URL is:  https://{bffHostname output}
 //   Update the OAuth redirect URIs in Azure Portal and Google Cloud Console to:
 //     https://{bffHostname}/auth/callback
+//
+//   ScenarioService is internal-only — no SCENARIO_SERVICE_URL secret needed.
+//   The BFF proxies all gRPC-Web traffic to http://aiatc-scenario internally.
 // ============================================================================
 
 targetScope = 'resourceGroup'
@@ -245,19 +244,9 @@ resource scenarioApp 'Microsoft.App/containerApps@2024-03-01' = {
         identity: identity.id
       }]
       ingress: {
-        external: true
+        external: false         // Internal only — the BFF proxies all gRPC-Web traffic
         targetPort: 5001
-        transport: 'http'       // gRPC-Web works over HTTP/1.1; 'http' accepts both HTTP/1.1 and HTTP/2
-        allowInsecure: false
-        corsPolicy: {
-          // Only the BFF origin is allowed — ScenarioService is not a public API.
-          // Bicep creates bffApp first (implicit dependency) so the FQDN is known.
-          allowedOrigins: ['https://${bffApp.properties.configuration.ingress.fqdn}']
-          allowedMethods: ['GET', 'POST', 'OPTIONS']
-          allowedHeaders: ['*']
-          exposeHeaders: ['Grpc-Status', 'Grpc-Message', 'Grpc-Encoding', 'Grpc-Accept-Encoding']
-          allowCredentials: false
-        }
+        transport: 'http'       // BFF→ScenarioService is server-to-server HTTP/2 gRPC
       }
       secrets: union(
         [{ name: 'pg-conn', value: pgConnStr }],
@@ -346,6 +335,7 @@ resource bffApp 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'oauth-google-secret', value: oauthGoogleClientSecret }
         { name: 'speech-key',          value: azureSpeechSubscriptionKey }
         { name: 'flightaware-key',     value: flightAwareApiKey }
+        { name: 'pg-conn',             value: pgConnStr }
       ]
     }
     template: {
@@ -385,9 +375,13 @@ resource bffApp 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'OAuth__Azure__Authority',      value: oauthAzureAuthority }
           { name: 'OAuth__Google__ClientId',      value: oauthGoogleClientId }
           { name: 'OAuth__Google__ClientSecret',  secretRef: 'oauth-google-secret' }
-          { name: 'AzureSpeech__SubscriptionKey', secretRef: 'speech-key' }
-          { name: 'AzureSpeech__Region',          value: azureSpeechRegion }
-          { name: 'FlightAware__ApiKey',          secretRef: 'flightaware-key' }
+          { name: 'AzureSpeech__SubscriptionKey',          secretRef: 'speech-key' }
+          { name: 'AzureSpeech__Region',                   value: azureSpeechRegion }
+          { name: 'FlightAware__ApiKey',                   secretRef: 'flightaware-key' }
+          // ScenarioService is internal-only; BFF reaches it via ACA's internal DNS.
+          // Within the same ACA environment, apps are reachable at http://{app-name}.
+          { name: 'ScenarioService__Address',              value: 'http://aiatc-scenario' }
+          { name: 'ConnectionStrings__ScenarioUsageDb',    secretRef: 'pg-conn' }
         ]
       }]
       scale: {
@@ -414,8 +408,6 @@ output acrName string = acr.name
 @description('BFF public hostname (no scheme). This replaces the Static Web App. Update OAuth redirect URIs to https://{this}/auth/callback.')
 output bffHostname string = bffApp.properties.configuration.ingress.fqdn
 
-@description('ScenarioService public hostname (no scheme). Add https://{this} as SCENARIO_SERVICE_URL GitHub secret — the CI/CD pipeline injects it into the WASM appsettings at build time.')
-output scenarioServiceHostname string = scenarioApp.properties.configuration.ingress.fqdn
 
 @description('Managed identity client ID. Needed if you configure federated credentials for GitHub Actions OIDC login.')
 output managedIdentityClientId string = identity.properties.clientId

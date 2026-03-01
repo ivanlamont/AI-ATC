@@ -1,9 +1,12 @@
 using AIATC.BFF;
 using AIATC.BFF.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Yarp.ReverseProxy.Configuration;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -71,6 +74,58 @@ try
     // Singleton speech-token cache shared across requests
     builder.Services.AddSingleton<SpeechTokenCache>();
 
+    // ── DataProtection — persist keys to Postgres so auth cookies survive restarts
+    // and work correctly across multiple replicas. When no DB connection string is
+    // configured (local dev without Postgres) we fall back to the default in-memory
+    // provider, which is fine for development.
+    var pgConnStr = builder.Configuration.GetConnectionString("ScenarioUsageDb");
+    if (!string.IsNullOrWhiteSpace(pgConnStr))
+    {
+        builder.Services.AddDbContext<BffDbContext>(options =>
+            options.UseNpgsql(pgConnStr));
+
+        builder.Services
+            .AddDataProtection()
+            .SetApplicationName("aiatc-bff")
+            .PersistKeysToDbContext<BffDbContext>();
+    }
+    else
+    {
+        builder.Services
+            .AddDataProtection()
+            .SetApplicationName("aiatc-bff");
+    }
+
+    // ── YARP reverse proxy — forwards browser gRPC-Web calls to ScenarioService.
+    // The browser points its gRPC channel at the BFF origin; YARP forwards any
+    // request whose path starts with the gRPC package path to the internal service.
+    // ScenarioService no longer needs external ingress.
+    var scenarioAddress = builder.Configuration["ScenarioService:Address"]
+        ?? "http://localhost:5001";
+
+    builder.Services.AddReverseProxy()
+        .LoadFromMemory(
+            routes:
+            [
+                new RouteConfig
+                {
+                    RouteId   = "scenario-grpc",
+                    ClusterId = "scenario",
+                    Match     = new RouteMatch { Path = "/aiatc.scenario.ScenarioService/{**catch-all}" }
+                }
+            ],
+            clusters:
+            [
+                new ClusterConfig
+                {
+                    ClusterId    = "scenario",
+                    Destinations = new Dictionary<string, DestinationConfig>
+                    {
+                        ["d1"] = new DestinationConfig { Address = scenarioAddress }
+                    }
+                }
+            ]);
+
     var app = builder.Build();
 
     // ACA terminates TLS — trust X-Forwarded-Proto so Request.Scheme is 'https',
@@ -84,6 +139,23 @@ try
     forwardedHeadersOptions.KnownNetworks.Clear();
     forwardedHeadersOptions.KnownProxies.Clear();
     app.UseForwardedHeaders(forwardedHeadersOptions);
+
+    // Ensure the DataProtectionKeys table exists. Using raw SQL (CREATE TABLE IF
+    // NOT EXISTS) so this is idempotent and doesn't interfere with ScenarioService's
+    // EF migrations that own the rest of the database schema.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("ScenarioUsageDb")))
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BffDbContext>();
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "DataProtectionKeys" (
+                "Id"           serial  NOT NULL,
+                "FriendlyName" text    NULL,
+                "Xml"          text    NULL,
+                CONSTRAINT "PK_DataProtectionKeys" PRIMARY KEY ("Id")
+            )
+            """);
+    }
 
     app.UseSession();
     app.UseAuthentication();
@@ -140,6 +212,10 @@ try
 
     app.MapControllers();
 
+    // gRPC-Web proxy — forwards ScenarioService calls from the browser to the
+    // internal ScenarioService container. Must be mapped before the SPA fallback.
+    app.MapReverseProxy();
+
     // ── Blazor SPA fallback ────────────────────────────────────────────────────
     //
     // In .NET 10, index.html is NOT in the static-web-assets manifest — the
@@ -148,7 +224,7 @@ try
     // (/, /simulation, /challenge-mode, etc.) using the physical file provider.
     app.MapFallbackToFile("index.html");
 
-    app.Run();
+    await app.RunAsync();
 }
 catch (Exception ex)
 {

@@ -1,38 +1,40 @@
 using AIATC.ScenarioService.Protos;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
-using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Serilog;
 
 namespace AIATC.Web.Services;
 
 /// <summary>
-/// gRPC client for communicating with the ScenarioService from Blazor WebAssembly
-/// Uses gRPC-Web for browser compatibility
+/// gRPC client for communicating with the ScenarioService from Blazor WebAssembly.
+/// Uses gRPC-Web for browser compatibility. Calls are forwarded to the BFF (same
+/// origin), which proxies them internally to the ScenarioService — no cross-origin
+/// connection required and no service URL baked into the WASM build.
 /// </summary>
 public class ScenarioServiceClient : IScenarioServiceClient
 {
     private readonly ScenarioService.Protos.ScenarioService.ScenarioServiceClient _client;
 
-    public ScenarioServiceClient(IConfiguration configuration)
+    public ScenarioServiceClient(IWebAssemblyHostEnvironment hostEnvironment)
     {
-        // Get ScenarioService address from configuration
-        var scenarioServiceAddress = configuration["ScenarioService:Address"] ?? "http://localhost:5001";
+        // Point at the BFF origin (same host that served the WASM). The BFF uses
+        // YARP to proxy /aiatc.scenario.ScenarioService/* to the internal service.
+        var address = hostEnvironment.BaseAddress.TrimEnd('/');
 
         // Create gRPC-Web handler for browser compatibility
         var httpHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, new HttpClientHandler());
 
-        // Create gRPC channel
-        var channel = GrpcChannel.ForAddress(scenarioServiceAddress, new GrpcChannelOptions
+        var channel = GrpcChannel.ForAddress(address, new GrpcChannelOptions
         {
             HttpHandler = httpHandler,
-            MaxReceiveMessageSize = 16 * 1024 * 1024, // 16 MB
-            MaxSendMessageSize = 16 * 1024 * 1024     // 16 MB
+            MaxReceiveMessageSize = 16 * 1024 * 1024,
+            MaxSendMessageSize = 16 * 1024 * 1024
         });
 
         _client = new ScenarioService.Protos.ScenarioService.ScenarioServiceClient(channel);
 
-        Log.Information("ScenarioServiceClient initialized with address: {Address}", scenarioServiceAddress);
+        Log.Information("ScenarioServiceClient initialized, proxying via BFF at {Address}", address);
     }
 
     // Scenario Discovery

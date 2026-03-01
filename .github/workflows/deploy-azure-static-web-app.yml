@@ -19,18 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Patch the Blazor WASM appsettings.json before the Docker build bakes it
-      # into the BFF image. Only runs on push to main — PRs retain the localhost
-      # placeholder, which is fine since they never deploy.
-      - name: Inject ScenarioService URL into WASM appsettings
-        if: github.event_name == 'push'
-        run: |
-          jq --arg url "${{ secrets.SCENARIO_SERVICE_URL }}" \
-            '.ScenarioService.Address = $url' \
-            src/AIATC.Web/wwwroot/appsettings.json > tmp.json
-          mv tmp.json src/AIATC.Web/wwwroot/appsettings.json
-          echo "ScenarioService.Address → ${{ secrets.SCENARIO_SERVICE_URL }}"
-
       # Build both images locally. Using a local tag keeps the build step
       # secret-free so it also works on PRs and fork contributions.
       - name: Build BFF image
