@@ -378,9 +378,9 @@ resource bffApp 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'AzureSpeech__SubscriptionKey',          secretRef: 'speech-key' }
           { name: 'AzureSpeech__Region',                   value: azureSpeechRegion }
           { name: 'FlightAware__ApiKey',                   secretRef: 'flightaware-key' }
-          // ScenarioService is internal-only; BFF reaches it via ACA's internal DNS.
-          // Within the same ACA environment, apps are reachable at http://{app-name}.
-          { name: 'ScenarioService__Address',              value: 'http://aiatc-scenario' }
+          // ScenarioService is internal-only. Its FQDN within the ACA environment
+          // is the full internal hostname (e.g. aiatc-scenario.internal.{env-domain}).
+          { name: 'ScenarioService__Address',              value: 'http://${scenarioApp.properties.configuration.ingress.fqdn}' }
           { name: 'ConnectionStrings__ScenarioUsageDb',    secretRef: 'pg-conn' }
         ]
       }]
