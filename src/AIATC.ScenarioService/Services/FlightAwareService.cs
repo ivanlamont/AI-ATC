@@ -194,7 +194,7 @@ public class FlightAwareService : IFlightAwareService
                     Callsign = flight.Ident ?? "UNKNOWN",
                     PositionNm = positionNm,
                     HeadingRadians = (position.Heading ?? 0) * (float)(Math.PI / 180.0),
-                    SpeedKnots = position.Groundspeed,
+                    SpeedKnots = position.Groundspeed > 0 ? position.Groundspeed : 150,
                     AltitudeFt = position.Altitude * 100, // AeroAPI reports altitude in hundreds of feet
                     MinSpeedKnots = 160,
                     MaxSpeedKnots = 500,

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Xunit;
 using Moq;
-using Microsoft.Extensions.Logging;
 using AIATC.Domain.Services;
 using AIATC.Domain.Models;
 using AIATC.Domain.Models.Scenarios;
@@ -14,14 +13,12 @@ namespace AIATC.Domain.Tests.Services
     public class ChallengeModeServiceTests
     {
         private readonly Mock<AIAgentService> _mockAiAgent;
-        private readonly Mock<ILogger<ChallengeModeService>> _mockLogger;
         private readonly ChallengeModeService _service;
 
         public ChallengeModeServiceTests()
         {
             _mockAiAgent = new Mock<AIAgentService>();
-            _mockLogger = new Mock<ILogger<ChallengeModeService>>();
-            _service = new ChallengeModeService(_mockAiAgent.Object, _mockLogger.Object);
+            _service = new ChallengeModeService(_mockAiAgent.Object);
         }
 
         [Fact]

@@ -32,6 +32,9 @@ public interface IScenarioServiceClient
     Task<LeaderboardResponse> GetLeaderboardAsync(string scenarioId, int limit);
     Task<SubmitScoreResponse> SubmitScoreAsync(SubmitScoreRequest request);
 
+    // Weather
+    Task<WeatherResponse> GetWeatherAsync(string airportCode);
+
     // Health
     Task<HealthCheckResponse> HealthCheckAsync();
 }

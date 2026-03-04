@@ -190,6 +190,53 @@
                 </div>
             }
 
+            @if (currentWeather != null && currentWeather.Available)
+            {
+                <div class="weather-panel">
+                    <h4>Weather · @currentWeather.IcaoId</h4>
+                    <div class="detail-row">
+                        <span>Wind:</span>
+                        <span>
+                            @if (currentWeather.WindSpeedKts == 0)
+                            {
+                                <text>Calm</text>
+                            }
+                            else if (currentWeather.WindGustKts > 0)
+                            {
+                                <text>@($"{currentWeather.WindDirDeg:D3}")° @currentWeather.WindSpeedKts G@currentWeather.WindGustKts kts</text>
+                            }
+                            else
+                            {
+                                <text>@($"{currentWeather.WindDirDeg:D3}")° @currentWeather.WindSpeedKts kts</text>
+                            }
+                        </span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Visibility:</span>
+                        <span>@currentWeather.VisibilitySm SM</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Altimeter:</span>
+                        <span>@currentWeather.AltimeterInhg.ToString("F2") inHg</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Sky:</span>
+                        <span>@(string.IsNullOrEmpty(currentWeather.SkyCover) ? "Clear" : currentWeather.SkyCover)</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(currentWeather.FlightCategory))
+                    {
+                        <div class="detail-row">
+                            <span>Category:</span>
+                            <span class="flight-cat flight-cat-@currentWeather.FlightCategory.ToLowerInvariant()">@currentWeather.FlightCategory</span>
+                        </div>
+                    }
+                    <div class="detail-row">
+                        <span>Temp/Dew:</span>
+                        <span>@currentWeather.TempC.ToString("F0")°C / @currentWeather.DewpC.ToString("F0")°C</span>
+                    </div>
+                </div>
+            }
+
             <div class="aircraft-list">
                 <h4>Aircraft (@aircraft.Count)</h4>
                 @foreach (var ac in aircraft.OrderBy(a => a.Callsign))
@@ -256,14 +303,16 @@
     private SessionScore sessionScore = new();
     private Dictionary<string, AircraftHappiness> aircraftHappiness = new();
 
+    // Weather
+    private WeatherResponse? currentWeather;
+
     protected override async Task OnInitializedAsync()
     {
         AuthService.AuthStateChanged += HandleAuthStateChanged;
         await AuthService.InitializeAsync();
 
-        // Load sample navigation data
+        // Load sample navigation data as fallback
         navigationDatabase = SampleNavigationData.CreateSampleDatabase();
-        fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
 
         // Start scoring session
         scoringService.StartNewSession($"session-{DateTime.UtcNow:yyyyMMdd-HHmmss}", timeMultiplier);
@@ -619,8 +668,20 @@
                 }
             }
 
-            fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
+            fixes = await LoadWaypointsAsync(airportCode);
             aircraftHappiness = scoringService.GetAllAircraftHappiness();
+
+            // Load weather (failure is silently ignored)
+            try
+            {
+                currentWeather = await ScenarioServiceClient.GetWeatherAsync(airportCode);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARN] Weather unavailable: {ex.Message}");
+                currentWeather = null;
+            }
+
             scenarioName = includeLiveAircraft
                 ? $"Live Scenario - {airportCode}"
                 : $"Layout Only - {airportCode}";
@@ -766,7 +827,17 @@
         StateHasChanged();
     }
 
-    private string GetWeatherSummary() => "Live weather summary unavailable";
+    private string GetWeatherSummary()
+    {
+        if (currentWeather == null || !currentWeather.Available) return "Weather unavailable";
+        var wind = currentWeather.WindSpeedKts == 0
+            ? "Calm"
+            : currentWeather.WindGustKts > 0
+                ? $"{currentWeather.WindDirDeg:D3}° at {currentWeather.WindSpeedKts}G{currentWeather.WindGustKts} kts"
+                : $"{currentWeather.WindDirDeg:D3}° at {currentWeather.WindSpeedKts} kts";
+        var cat = string.IsNullOrEmpty(currentWeather.FlightCategory) ? "" : $" · {currentWeather.FlightCategory}";
+        return $"{wind} · Vis {currentWeather.VisibilitySm} SM · Alt {currentWeather.AltimeterInhg:F2} inHg{cat}";
+    }
 
     private async Task<bool> TryLoadSavedScenarioAsync(string savedScenarioId)
     {
@@ -815,7 +886,7 @@
                 scoringService.RegisterAircraft(ac.Callsign, 30);
             }
 
-            fixes = navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
+            fixes = await LoadWaypointsAsync(airportCode);
             aircraftHappiness = scoringService.GetAllAircraftHappiness();
             scenarioName = $"Loaded Scenario - {savedScenarioId[..Math.Min(savedScenarioId.Length, 8)]}...";
 
@@ -1186,7 +1257,7 @@
             AircraftType = string.IsNullOrWhiteSpace(aircraftPosition.AircraftType) ? "UNK" : aircraftPosition.AircraftType,
             PositionNm = LatLonToNm(aircraftPosition.Latitude, aircraftPosition.Longitude, CenterLatitude, CenterLongitude),
             HeadingDegrees = (float)aircraftPosition.Heading,
-            SpeedKnots = (float)aircraftPosition.GroundSpeedKnots,
+            SpeedKnots = aircraftPosition.GroundSpeedKnots > 0 ? (float)aircraftPosition.GroundSpeedKnots : 150f,
             AltitudeFt = aircraftPosition.AltitudeFt,
             VerticalSpeedFpm = (float)aircraftPosition.VerticalSpeedFpm,
             IsArrival = true,
@@ -1205,6 +1276,42 @@
         var nmLon = lonDiff * 60.0 * Math.Cos(referenceLatitude * Math.PI / 180.0);
 
         return new Vector2((float)nmLon, (float)nmLat);
+    }
+
+    private async Task<List<Fix>> LoadWaypointsAsync(string code)
+    {
+        try
+        {
+            var proceduresResponse = await ScenarioServiceClient.GetProceduresAsync(
+                new GetProceduresRequest { AirportCode = code });
+
+            var waypoints = proceduresResponse.Procedures
+                .SelectMany(p => p.Waypoints)
+                .Where(w => w.Latitude != 0 || w.Longitude != 0)
+                .DistinctBy(w => w.Identifier)
+                .Select(w => new Fix
+                {
+                    Identifier = w.Identifier,
+                    PositionNm = LatLonToNm(w.Latitude, w.Longitude, CenterLatitude, CenterLongitude),
+                    Latitude = w.Latitude,
+                    Longitude = w.Longitude,
+                    Type = FixType.GPS
+                })
+                .Take(300)
+                .ToList();
+
+            if (waypoints.Count > 0)
+            {
+                return waypoints;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[WARN] Failed to load waypoints from ARINC DB: {ex.Message}");
+        }
+
+        // Fallback to sample data
+        return navigationDatabase.GetFixesNear(new Vector2(0, 0), 40).Take(120).ToList();
     }
 
 }

@@ -18,15 +18,18 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
     private readonly AirspaceReferenceDbContext _airspaceDb;
     private readonly ScenarioUsageDbContext _usageDb;
     private readonly IFlightAwareService _flightAwareService;
+    private readonly IAviationWeatherService _weatherService;
 
     public ScenarioServiceImpl(
         AirspaceReferenceDbContext airspaceDb,
         ScenarioUsageDbContext usageDb,
-        IFlightAwareService flightAwareService)
+        IFlightAwareService flightAwareService,
+        IAviationWeatherService weatherService)
     {
         _airspaceDb = airspaceDb;
         _usageDb = usageDb;
         _flightAwareService = flightAwareService;
+        _weatherService = weatherService;
     }
 
     // Health Check
@@ -806,15 +809,106 @@ public class ScenarioServiceImpl : Protos.ScenarioService.ScenarioServiceBase
         try
         {
             var response = new ProceduresResponse();
-            // Implementation would query approach procedures from reference database
-            // This is a simplified version
-            Log.Warning("GetProcedures not fully implemented yet");
+            var code = AirportReferenceLookup.Normalize(request.AirportCode);
+            if (string.IsNullOrEmpty(code))
+            {
+                return response;
+            }
+
+            // Build lookup codes to handle both 3-char and 4-char ICAO codes
+            var lookupCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { code };
+            if (code.Length == 4) lookupCodes.Add(code[1..]); // e.g. KSFO → SFO
+            if (code.Length == 3) lookupCodes.Add("K" + code); // e.g. SFO → KSFO
+
+            var terminalWaypoints = await _airspaceDb.TerminalWaypoints
+                .Where(tw => tw.AirportIdentifier != null && lookupCodes.Contains(tw.AirportIdentifier))
+                .Where(tw => tw.WaypointIdentifier != null && tw.Latitude != null && tw.Longitude != null)
+                .Select(tw => new { tw.WaypointIdentifier, tw.Latitude, tw.Longitude })
+                .Distinct()
+                .ToListAsync();
+
+            if (terminalWaypoints.Count == 0)
+            {
+                Log.Warning("No terminal waypoints found in ARINC DB for airport {Airport}", code);
+                return response;
+            }
+
+            var procedure = new ProcedureData { Identifier = "FIXES", Type = "FIXES" };
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var tw in terminalWaypoints)
+            {
+                if (!seen.Add(tw.WaypointIdentifier!)) continue;
+                if (!ArincCoordinateParser.TryParseLatitude(tw.Latitude, out var lat)) continue;
+                if (!ArincCoordinateParser.TryParseLongitude(tw.Longitude, out var lon)) continue;
+
+                procedure.Waypoints.Add(new WaypointData
+                {
+                    Identifier = tw.WaypointIdentifier!,
+                    Latitude = lat,
+                    Longitude = lon
+                });
+            }
+
+            Log.Information("Returning {Count} terminal waypoints for airport {Airport}", procedure.Waypoints.Count, code);
+            response.Procedures.Add(procedure);
             return response;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error getting procedures");
+            Log.Error(ex, "Error getting procedures for {Airport}", request.AirportCode);
             throw new RpcException(new Status(StatusCode.Internal, "Failed to get procedures"));
+        }
+    }
+
+    // Weather
+    public override async Task<WeatherResponse> GetWeather(GetWeatherRequest request, ServerCallContext context)
+    {
+        try
+        {
+            var code = AirportReferenceLookup.Normalize(request.AirportCode);
+            if (string.IsNullOrEmpty(code))
+                return new WeatherResponse { Available = false };
+
+            var metar = await _weatherService.GetMetarAsync(code);
+            if (metar == null)
+                return new WeatherResponse { Available = false };
+
+            var response = new WeatherResponse
+            {
+                Available = true,
+                IcaoId = metar.IcaoId ?? code,
+                RawMetar = metar.RawOb ?? string.Empty,
+                TempC = metar.Temp ?? 0,
+                DewpC = metar.Dewp ?? 0,
+                WindDirDeg = metar.Wdir ?? 0,
+                WindSpeedKts = metar.Wspd ?? 0,
+                WindGustKts = metar.Wgst ?? 0,
+                VisibilitySm = metar.Visib ?? string.Empty,
+                AltimeterInhg = metar.Altim.HasValue ? metar.Altim.Value / 33.8639 : 0, // hPa → inHg
+                FlightCategory = metar.FltCat ?? string.Empty,
+                SkyCover = metar.Cover ?? string.Empty,
+                ObservationTime = metar.ReportTime ?? string.Empty,
+            };
+
+            if (metar.Clouds != null)
+            {
+                foreach (var cloud in metar.Clouds)
+                {
+                    response.CloudLayers.Add(new CloudLayer
+                    {
+                        Coverage = cloud.Cover ?? string.Empty,
+                        BaseFt = (cloud.Base ?? 0) * 100 // API returns hundreds of feet
+                    });
+                }
+            }
+
+            return response;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error getting weather for {Airport}", request.AirportCode);
+            return new WeatherResponse { Available = false };
         }
     }
 

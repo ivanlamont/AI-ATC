@@ -7,13 +7,55 @@
                 "AI-ATC: Debug Scenario Service",
                 "AI-ATC: Run Web App"
             ]
+        },
+        {
+            "name": "AI-ATC: Debug BFF + Scenario Service",
+            "configurations": [
+                "AI-ATC: Debug BFF",
+                "AI-ATC: Debug Scenario Service"
+            ],
+            "stopAll": true
         }
     ],
     "configurations": [
         {
+            "name": "AI-ATC: Debug BFF",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "dotnet: build solution",
+            "program": "${workspaceFolder}/src/AIATC.BFF/bin/Debug/net10.0/AIATC.BFF.dll",
+            "cwd": "${workspaceFolder}/src/AIATC.BFF",
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5000",
+                "ScenarioService__Address": "http://localhost:5285"
+            }
+        },
+        {
+            "name": "AI-ATC: Debug BFF (Production Scenario Service)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "dotnet: build solution",
+            "program": "${workspaceFolder}/src/AIATC.BFF/bin/Debug/net10.0/AIATC.BFF.dll",
+            "cwd": "${workspaceFolder}/src/AIATC.BFF",
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Production",
+                "ASPNETCORE_URLS": "http://localhost:5000"
+            }
+        },
+        {
             "name": "AI-ATC: Debug Scenario Service",
             "type": "coreclr",
             "request": "launch",
+            "preLaunchTask": "dotnet: build solution",
             "program": "${workspaceFolder}/src/AIATC.ScenarioService/bin/Debug/net10.0/AIATC.ScenarioService.dll",
             "cwd": "${workspaceFolder}/src/AIATC.ScenarioService",
             "env": {

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AIATC.BFF.Models;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -8,7 +7,6 @@ namespace AIATC.BFF.Controllers;
 
 [ApiController]
 [Route("api/speech")]
-[Authorize(AuthenticationSchemes = "AiatcCookie")]
 public class SpeechController : ControllerBase
 {
     private readonly IHttpClientFactory _httpClientFactory;

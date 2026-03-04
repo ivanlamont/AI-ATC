@@ -168,6 +168,32 @@
     color: #00cc00;
 }
 
+.weather-panel {
+    background: rgba(0, 20, 40, 0.85);
+    border: 1px solid #004466;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.weather-panel h4 {
+    margin: 0 0 8px 0;
+    color: #00aaff;
+    font-size: 13px;
+}
+
+.weather-panel .detail-row {
+    color: #88ddff;
+}
+
+.flight-cat {
+    font-weight: bold;
+}
+
+.flight-cat-vfr   { color: #00ff00; }
+.flight-cat-mvfr  { color: #4488ff; }
+.flight-cat-ifr   { color: #ff4444; }
+.flight-cat-lifr  { color: #ff44ff; }
+
 .aircraft-list {
     background: rgba(0, 30, 0, 0.8);
     border: 1px solid #004400;

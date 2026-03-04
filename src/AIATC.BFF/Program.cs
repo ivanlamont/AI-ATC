@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AIATC.BFF;
 using AIATC.BFF.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Npgsql;
 using Serilog;
 using Yarp.ReverseProxy.Configuration;
@@ -132,6 +134,14 @@ try
     var scenarioAddress = builder.Configuration["ScenarioService:Address"]
         ?? "http://localhost:5001";
 
+    // HTTP/2 over cleartext (h2c) is disabled by default in .NET's HttpClient.
+    // YARP forwards gRPC calls using HTTP/2; when the upstream is http:// (local dev)
+    // we must opt in. Production uses https:// so TLS ALPN handles HTTP/2 negotiation.
+    if (scenarioAddress.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+    {
+        AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+    }
+
     builder.Services.AddReverseProxy()
         .LoadFromMemory(
             routes:
@@ -208,6 +218,79 @@ try
     wasmContentTypes.Mappings[".dll"]  = "application/octet-stream";
     wasmContentTypes.Mappings[".blat"] = "application/octet-stream";
     wasmContentTypes.Mappings[".pdb"]  = "application/octet-stream";
+
+    // In Development, _content/ NuGet package static web assets from referenced WASM
+    // projects are never propagated to the BFF's static web assets manifest (only
+    // wwwroot and obj/ content roots are propagated). Parse the WASM project's own
+    // development manifest to find any _content/ NuGet packages and register a
+    // PhysicalFileProvider for each one so they can be served at their _content/ paths.
+    // This is required for Microsoft.DotNet.HotReload.WebAssembly.Browser which the
+    // WASM runtime loads as a library initializer in Debug builds.
+    if (app.Environment.IsDevelopment())
+    {
+        var wasmManifestPath = Path.GetFullPath(Path.Combine(
+            app.Environment.ContentRootPath,
+            "../AIATC.Web/obj/Debug/net10.0/staticwebassets.development.json"));
+
+        if (File.Exists(wasmManifestPath))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(wasmManifestPath));
+                var roots = doc.RootElement.GetProperty("ContentRoots")
+                    .EnumerateArray().Select(r => r.GetString()!).ToArray();
+
+                if (doc.RootElement.TryGetProperty("Root", out var rootNode) &&
+                    rootNode.TryGetProperty("Children", out var topChildren) &&
+                    topChildren.TryGetProperty("_content", out var contentNode) &&
+                    contentNode.TryGetProperty("Children", out var packages))
+                {
+                    foreach (var pkg in packages.EnumerateObject())
+                    {
+                        if (!pkg.Value.TryGetProperty("Children", out var files)) continue;
+
+                        // Find the ContentRootIndex used by any file in this package
+                        foreach (var file in files.EnumerateObject())
+                        {
+                            if (file.Value.TryGetProperty("Asset", out var asset) &&
+                                asset.TryGetProperty("ContentRootIndex", out var idxEl) &&
+                                idxEl.GetInt32() < roots.Length)
+                            {
+                                var physRoot = roots[idxEl.GetInt32()].TrimEnd('\\', '/');
+                                if (Directory.Exists(physRoot))
+                                {
+                                    app.UseStaticFiles(new StaticFileOptions
+                                    {
+                                        FileProvider = new PhysicalFileProvider(physRoot),
+                                        RequestPath = $"/_content/{pkg.Name}",
+                                        ContentTypeProvider = wasmContentTypes,
+                                        ServeUnknownFileTypes = true,
+                                        DefaultContentType = "application/octet-stream",
+                                    });
+                                    Log.Information(
+                                        "Dev: serving /_content/{Package} from {Path}",
+                                        pkg.Name, physRoot);
+                                }
+                                break; // one registration per package is enough
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Dev: could not parse WASM static web assets manifest at {Path}",
+                    wasmManifestPath);
+            }
+        }
+        else
+        {
+            Log.Warning(
+                "Dev: WASM static web assets manifest not found at {Path}. " +
+                "Run 'dotnet build src/AIATC.Web' first.", wasmManifestPath);
+        }
+    }
+
     app.UseStaticFiles(new StaticFileOptions
     {
         ContentTypeProvider  = wasmContentTypes,

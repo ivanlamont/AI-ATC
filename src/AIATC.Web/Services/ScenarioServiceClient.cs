@@ -260,6 +260,21 @@ public class ScenarioServiceClient : IScenarioServiceClient
         }
     }
 
+    // Weather
+    public async Task<WeatherResponse> GetWeatherAsync(string airportCode)
+    {
+        try
+        {
+            var request = new GetWeatherRequest { AirportCode = airportCode };
+            return await _client.GetWeatherAsync(request);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error getting weather for {AirportCode}", airportCode);
+            throw;
+        }
+    }
+
     // Health
     public async Task<HealthCheckResponse> HealthCheckAsync()
     {

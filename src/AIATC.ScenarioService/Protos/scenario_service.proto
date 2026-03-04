@@ -31,6 +31,9 @@ service ScenarioService {
   rpc GetLeaderboard (GetLeaderboardRequest) returns (LeaderboardResponse);
   rpc SubmitScore (SubmitScoreRequest) returns (SubmitScoreResponse);
 
+  // Weather
+  rpc GetWeather (GetWeatherRequest) returns (WeatherResponse);
+
   // Health
   rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
 }
@@ -246,6 +249,33 @@ message SubmitScoreResponse {
   bool success = 1;
   int32 rank = 2;
   string message = 3;
+}
+
+// Weather Messages
+message GetWeatherRequest {
+  string airport_code = 1;
+}
+
+message CloudLayer {
+  string coverage = 1;  // CLR, FEW, SCT, BKN, OVC
+  int32 base_ft = 2;
+}
+
+message WeatherResponse {
+  bool available = 1;
+  string icao_id = 2;
+  string raw_metar = 3;
+  double temp_c = 4;
+  double dewp_c = 5;
+  int32 wind_dir_deg = 6;
+  int32 wind_speed_kts = 7;
+  int32 wind_gust_kts = 8;
+  string visibility_sm = 9;
+  double altimeter_inhg = 10;
+  string flight_category = 11;  // VFR, MVFR, IFR, LIFR
+  string sky_cover = 12;        // dominant sky cover code
+  repeated CloudLayer cloud_layers = 13;
+  string observation_time = 14; // ISO 8601
 }
 
 // Health Check Messages

@@ -59,9 +59,18 @@
       "Bash(az ad app show:*)",
       "Bash(az ad app update:*)",
       "Bash(gh workflow:*)",
+      "Bash(az:*)",
       "Bash(az acr list:*)",
       "Bash(git -C /c/Users/ivanl/source/repos/AI-ATC update-index:*)",
-      "Bash(git -C /c/Users/ivanl/source/repos/AI-ATC add scripts/seed-airspace-db.sh)"
+      "Bash(git -C /c/Users/ivanl/source/repos/AI-ATC add scripts/seed-airspace-db.sh)",
+      "Bash(az containerapp:*)",
+      "Bash(xargs grep:*)",
+      "Bash(git:*)",
+      "Bash(wait:*)",
+      "WebFetch(domain:aviationweather.gov)",
+      "Bash(node:*)",
+      "Bash(powershell:*)",
+      "Bash(grep:*)"
     ]
   }
 }

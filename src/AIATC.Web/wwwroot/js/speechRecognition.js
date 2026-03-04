@@ -13,6 +13,7 @@ window.speechRecognition = {
     _activeStream: null,
 
     initialize: function (dotNetReference) {
+        try {
         this.dotNetRef = dotNetReference;
 
         // Check browser support
@@ -82,7 +83,12 @@ window.speechRecognition = {
             }
         };
 
+        console.log('Web Speech API initialized successfully');
         return true;
+        } catch (e) {
+            console.error('speechRecognition.initialize threw:', e);
+            return false;
+        }
     },
 
     // Initialize Azure Speech fallback for browsers without Web Speech API.

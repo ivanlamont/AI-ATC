@@ -26,6 +26,10 @@
       SIDE EFFECT: Private="false" also suppresses the Blazor SDK target that copies
       the processed index.html into the BFF wwwroot. We compensate via an explicit
       'find + cp' step in the Dockerfile after 'dotnet publish' runs.
+
+      NOTE: _content/ NuGet package static web assets are never propagated to the BFF
+      even without Private="false". Dev-mode serving is handled in Program.cs by
+      parsing the WASM project's staticwebassets.development.json manifest.
     -->
     <ProjectReference Include="..\AIATC.Web\AIATC.Web.csproj"
                       Private="false"

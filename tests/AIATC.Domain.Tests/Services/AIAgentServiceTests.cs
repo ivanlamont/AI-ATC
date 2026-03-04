@@ -1,8 +1,6 @@
 using System;
 using System.Threading.Tasks;
 using Xunit;
-using Microsoft.Extensions.Logging;
-using Moq;
 using AIATC.Domain.Services;
 using AIATC.Domain.Models;
 using AIATC.Common;
@@ -11,13 +9,11 @@ namespace AIATC.Domain.Tests.Services
 {
     public class AIAgentServiceTests
     {
-        private readonly Mock<ILogger<AIAgentService>> _mockLogger;
         private readonly AIAgentService _service;
 
         public AIAgentServiceTests()
         {
-            _mockLogger = new Mock<ILogger<AIAgentService>>();
-            _service = new AIAgentService("localhost", 50051, _mockLogger.Object);
+            _service = new AIAgentService("localhost", 50051);
         }
 
         [Fact]
@@ -34,7 +30,7 @@ namespace AIATC.Domain.Tests.Services
         public void Constructor_WithCustomParameters_ShouldSetValues()
         {
             // Act
-            var service = new AIAgentService("192.168.1.1", 9999, _mockLogger.Object);
+            var service = new AIAgentService("192.168.1.1", 9999);
 
             // Assert
             Assert.NotNull(service);

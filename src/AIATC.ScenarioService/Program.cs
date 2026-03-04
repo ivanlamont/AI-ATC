@@ -40,6 +40,9 @@ builder.Services.AddDbContext<ScenarioUsageDbContext>(options =>
 // Add HttpClient for FlightAware service
 builder.Services.AddHttpClient<IFlightAwareService, FlightAwareService>();
 
+// Add HttpClient for Aviation Weather (aviationweather.gov — free, no key required)
+builder.Services.AddHttpClient<IAviationWeatherService, AviationWeatherService>();
+
 // Configure FlightAware options
 builder.Services.Configure<FlightAwareOptions>(
     builder.Configuration.GetSection("FlightAware"));
