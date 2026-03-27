@@ -1,6 +1,27 @@
 version: '3.9'
 
 services:
+  # PostgreSQL for ARINC 424 airspace reference data (read-only)
+  postgres-airspace:
+    image: postgres:17-alpine
+    container_name: aiatc-postgres-airspace
+    environment:
+      POSTGRES_DB: arinc424
+      POSTGRES_USER: arinc424
+      POSTGRES_PASSWORD: fly_@irline_RADA4!
+    ports:
+      - "5430:5432"
+    volumes:
+      - postgres_airspace_data:/var/lib/postgresql/data
+      - ./scripts/arinc424_cycle2508.sql:/docker-entrypoint-initdb.d/01-arinc424_cycle2508.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arinc424 -d arinc424"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aiatc-network
+
   # PostgreSQL for scenario usage data
   postgres-usage:
     image: postgres:16-alpine
@@ -58,12 +79,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:5001
-      ConnectionStrings__AirspaceDb: "Host=host.docker.internal;Port=5430;Database=arinc424;Username=arinc424;Password=fly_@irline_RADA4!;Search Path=cycle2508"
+      ConnectionStrings__AirspaceDb: "Host=postgres-airspace;Port=5432;Database=arinc424;Username=arinc424;Password=fly_@irline_RADA4!;Search Path=cycle2508"
       ConnectionStrings__ScenarioUsageDb: "Host=postgres-usage;Port=5432;Database=aiatc_usage;Username=aiatc;Password=aiatc_dev_password"
       FlightAware__ApiKey: ""
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
+      postgres-airspace:
+        condition: service_healthy
       postgres-usage:
         condition: service_healthy
       dapr-placement:
@@ -122,6 +143,7 @@ services:
       - aiatc-network
 
 volumes:
+  postgres_airspace_data:
   postgres_usage_data:
 
 networks:
