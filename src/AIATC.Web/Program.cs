@@ -35,7 +35,12 @@ builder.Services.AddScoped<IFlightAwareService, FlightAwareService>();
 builder.Services.AddScoped<IScenarioServiceClient>(_ =>
     new ScenarioServiceClient(builder.HostEnvironment));
 
-// Azure services
+// TTS services — Piper TTS via BFF proxy, Azure as fallback
+builder.Services.AddScoped<IPiperTtsService>(sp =>
+{
+    var httpClient = sp.GetRequiredService<HttpClient>();
+    return new PiperTtsService(httpClient);
+});
 builder.Services.AddScoped<IAzureConfigurationService, AzureConfigurationService>();
 builder.Services.AddScoped<IAzureSpeechService, AzureSpeechService>();
 

@@ -2,6 +2,46 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "start-infra",
+            "type": "shell",
+            "command": "docker",
+            "args": ["compose", "up", "-d", "postgres-usage", "postgres-airspace"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "dotnet: build solution",
+            "type": "shell",
+            "command": "dotnet",
+            "args": ["build", "${workspaceFolder}/AIATC.slnx", "--configuration", "Debug"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-with-infra",
+            "dependsOn": ["start-infra", "dotnet: build solution"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        },
+        {
             "label": "Launch TensorBoard",
             "type": "shell",
             "command": "tensorboard",
@@ -61,24 +101,6 @@
             "dependsOn": ["Train AI ATC", "Launch TensorBoard"],
             "dependsOrder": "parallel",
             "group": "build"
-        },
-        {
-            "label": "dotnet: build solution",
-            "type": "shell",
-            "command": "dotnet",
-            "args": ["build", "${workspaceFolder}/AIATC.slnx", "--configuration", "Debug"],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "clear": true
-            },
-            "problemMatcher": "$msCompile"
         },
         {
             "label": "Run AIATC.Web",

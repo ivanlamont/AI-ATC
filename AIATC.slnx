@@ -4,7 +4,9 @@
     <Project Path="src/AIATC.AIAgentService/AIATC.AIAgentService.csproj" />
     <Project Path="src/AIATC.AudioService/AIATC.AudioService.csproj" />
     <Project Path="src/AIATC.Common/AIATC.Common.csproj" />
+    <Project Path="src/AIATC.Data/AIATC.Data.csproj" />
     <Project Path="src/AIATC.Domain/AIATC.Domain.csproj" />
+    <Project Path="src/AIATC.EF/AIATC.EF.csproj" />
     <Project Path="src/AIATC.ReferenceData.Context/AIATC.ReferenceData.Context.csproj" />
     <Project Path="src/AIATC.ReferenceData/AIATC.ReferenceData.csproj" />
     <Project Path="src/AIATC.ScenarioService.Data/AIATC.ScenarioService.Data.csproj" />
@@ -12,6 +14,7 @@
     <Project Path="src/AIATC.SimulationService/AIATC.SimulationService.csproj" />
     <Project Path="src/AIATC.UserService/AIATC.UserService.csproj" />
     <Project Path="src/AIATC.Web/AIATC.Web.csproj" />
+    <Project Path="src/AIATC.WorldDataService/AIATC.WorldDataService.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AIATC.Domain.Tests/AIATC.Domain.Tests.csproj" />

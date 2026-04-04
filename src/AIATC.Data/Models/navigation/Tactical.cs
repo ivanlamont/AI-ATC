@@ -1,4 +1,5 @@
 using AIATC.Data.Models.Types;
+using AIATC.Data.Types.Navigation;
 
 namespace AIATC.Data.Models.Navigation;
 

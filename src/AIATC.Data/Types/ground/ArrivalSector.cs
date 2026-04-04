@@ -1,3 +1,5 @@
+using AIATC.Data.Types.Common;
+
 namespace AIATC.Data.Models.Types;
 
 public sealed class ArrivalSector : Sector

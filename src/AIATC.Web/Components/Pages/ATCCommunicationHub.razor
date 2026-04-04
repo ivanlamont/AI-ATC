@@ -5,6 +5,7 @@
 @inject IAzureSpeechService SpeechService
 @inject IAzureConfigurationService ConfigService
 @inject IJSRuntime JSRuntime
+@inject IPiperTtsService PiperTtsService
 @implements IDisposable
 
 <div class="atc-communication-container">
@@ -391,10 +392,11 @@
             var testVocabularyService = new AviationVocabularyService(httpClient);
             
             var testService = new AzureSpeechService(
-                httpClient, 
-                testRecognition, 
+                httpClient,
+                testRecognition,
                 testTTS,
-                testVocabularyService);
+                testVocabularyService,
+                PiperTtsService);
                 
             var success = await testService.InitializeAsync();
             

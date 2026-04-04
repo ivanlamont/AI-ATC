@@ -4,7 +4,7 @@ using AIATC.Data.Models.Ground;
 using AIATC.Data.Models.Waypoints;
 using AIATC.Data.Models.Navigation;
 using AIATC.Data.Models.Comms;
-using static AIATC.Data.Models.Types.Enums;
+using AIATC.Data.Types.Common;
 
 namespace AIATC.Data.Models.Ground;
 

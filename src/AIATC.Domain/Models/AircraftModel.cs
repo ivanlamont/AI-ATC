@@ -60,6 +60,9 @@ public class AircraftModel
     
     // Route Clearance System
     public RouteClearance? RouteClearance { get; set; }
+
+    // Piper TTS voice assigned to this flight (e.g. "en_GB-alan-medium")
+    public string? AssignedPiperVoice { get; set; }
     
     // Wind (external)
     private Wind? _currentWind;

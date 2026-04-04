@@ -2,19 +2,19 @@
     "version": "0.2.0",
     "compounds": [
         {
-            "name": "AI-ATC: Debug Web + Scenario Service",
-            "configurations": [
-                "AI-ATC: Debug Scenario Service",
-                "AI-ATC: Run Web App"
-            ]
-        },
-        {
-            "name": "AI-ATC: Debug BFF + Scenario Service",
+            "name": "AI-ATC: Full Stack",
             "configurations": [
                 "AI-ATC: Debug BFF",
                 "AI-ATC: Debug Scenario Service"
             ],
             "stopAll": true
+        },
+        {
+            "name": "AI-ATC: Debug Web + Scenario Service",
+            "configurations": [
+                "AI-ATC: Debug Scenario Service",
+                "AI-ATC: Run Web App"
+            ]
         }
     ],
     "configurations": [
@@ -22,7 +22,7 @@
             "name": "AI-ATC: Debug BFF",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "dotnet: build solution",
+            "preLaunchTask": "build-with-infra",
             "program": "${workspaceFolder}/src/AIATC.BFF/bin/Debug/net10.0/AIATC.BFF.dll",
             "cwd": "${workspaceFolder}/src/AIATC.BFF",
             "serverReadyAction": {
@@ -55,11 +55,12 @@
             "name": "AI-ATC: Debug Scenario Service",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "dotnet: build solution",
+            "preLaunchTask": "build-with-infra",
             "program": "${workspaceFolder}/src/AIATC.ScenarioService/bin/Debug/net10.0/AIATC.ScenarioService.dll",
             "cwd": "${workspaceFolder}/src/AIATC.ScenarioService",
             "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development"
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5285"
             }
         },
         {

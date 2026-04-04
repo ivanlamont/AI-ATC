@@ -67,12 +67,14 @@ try
     {
         client.BaseAddress = new Uri("https://aeroapi.flightaware.com");
     });
+    builder.Services.AddHttpClient("piper-tts");
 
     builder.Services.AddControllers();
 
     builder.Services.Configure<BffOAuthOptions>(builder.Configuration.GetSection("OAuth"));
     builder.Services.Configure<AzureSpeechBffOptions>(builder.Configuration.GetSection("AzureSpeech"));
     builder.Services.Configure<FlightAwareBffOptions>(builder.Configuration.GetSection("FlightAware"));
+    builder.Services.Configure<PiperTtsBffOptions>(builder.Configuration.GetSection("PiperTts"));
 
     // Singleton speech-token cache shared across requests
     builder.Services.AddSingleton<SpeechTokenCache>();

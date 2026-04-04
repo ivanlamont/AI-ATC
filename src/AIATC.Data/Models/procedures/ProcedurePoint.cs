@@ -1,4 +1,5 @@
 using AIATC.Data.Models.Types;
+using AIATC.Data.Types.Common;
 using System.Diagnostics;
 namespace AIATC.Data.Models.Procedures;
 

@@ -11,8 +11,10 @@
 @using AIATC.ScenarioService.Protos
 @using System.Linq
 @using System.Text.RegularExpressions
+@using AIATC.Domain.Services
 @inject IJSRuntime JS
 @inject TextToSpeechService TextToSpeech
+@inject IAzureSpeechService SpeechService
 @inject INavigationService NavigationService
 @inject NavigationManager NavigationManager
 @inject IScenarioServiceClient ScenarioServiceClient
@@ -543,7 +545,23 @@
             _ => "Roger"
         };
 
-        // Callsign at the end (proper aviation format)
+        var fullText = $"{readback}, {aircraft.Callsign}";
+
+        // Use Piper TTS with the airline-appropriate voice when available
+        if (!string.IsNullOrEmpty(aircraft.AssignedPiperVoice))
+        {
+            var audioData = await SpeechService.SynthesizeSpeechAsync(
+                fullText, ATCVoiceProfile.PilotMale, aircraft.AssignedPiperVoice);
+
+            if (audioData.Length > 0)
+            {
+                var base64Audio = Convert.ToBase64String(audioData);
+                await JS.InvokeVoidAsync("playAudioData", base64Audio, "audio/wav");
+                return;
+            }
+        }
+
+        // Fallback to browser Web Speech API
         await TextToSpeech.SpeakPilotReadbackAsync(aircraft.Callsign, readback);
     }
 
@@ -1251,9 +1269,12 @@
 
     private AircraftModel MapAircraft(AircraftPosition aircraftPosition)
     {
+        var callsign = aircraftPosition.Callsign;
+        var voiceAssignment = AirlineVoiceMapper.AssignVoice(callsign);
+
         return new AircraftModel
         {
-            Callsign = aircraftPosition.Callsign,
+            Callsign = callsign,
             AircraftType = string.IsNullOrWhiteSpace(aircraftPosition.AircraftType) ? "UNK" : aircraftPosition.AircraftType,
             PositionNm = LatLonToNm(aircraftPosition.Latitude, aircraftPosition.Longitude, CenterLatitude, CenterLongitude),
             HeadingDegrees = (float)aircraftPosition.Heading,
@@ -1263,7 +1284,8 @@
             IsArrival = true,
             MinSpeedKnots = 160,
             MaxSpeedKnots = 500,
-            Destination = airport
+            Destination = airport,
+            AssignedPiperVoice = voiceAssignment.PiperVoiceName
         };
     }
 

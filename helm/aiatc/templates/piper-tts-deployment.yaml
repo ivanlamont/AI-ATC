@@ -1,0 +1,116 @@
+{{- if .Values.piperTts.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aiatc.fullname" . }}-piper-tts
+  labels:
+    {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: piper-tts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "aiatc.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: piper-tts
+  template:
+    metadata:
+      labels:
+        {{- include "aiatc.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: piper-tts
+    spec:
+      {{- if .Values.piperTts.initVoices.enabled }}
+      initContainers:
+        - name: download-voices
+          image: "{{ .Values.piperTts.initVoices.image.repository }}:{{ .Values.piperTts.initVoices.image.tag }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              PIPER_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+              VOICES="
+                en/en_US/ryan/high/en_US-ryan-high
+                en/en_US/joe/medium/en_US-joe-medium
+                en/en_US/bryce/medium/en_US-bryce-medium
+                en/en_US/john/medium/en_US-john-medium
+                en/en_US/lessac/high/en_US-lessac-high
+                en/en_US/amy/medium/en_US-amy-medium
+                en/en_US/kristin/medium/en_US-kristin-medium
+                en/en_US/hfc_female/medium/en_US-hfc_female-medium
+                en/en_GB/alan/medium/en_GB-alan-medium
+                en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium
+                en/en_GB/cori/high/en_GB-cori-high
+                en/en_GB/alba/medium/en_GB-alba-medium
+                fr/fr_FR/tom/medium/fr_FR-tom-medium
+                fr/fr_FR/siwis/medium/fr_FR-siwis-medium
+                de/de_DE/thorsten/high/de_DE-thorsten-high
+                de/de_DE/kerstin/low/de_DE-kerstin-low
+                it/it_IT/riccardo/x_low/it_IT-riccardo-x_low
+                it/it_IT/paola/medium/it_IT-paola-medium
+                es/es_ES/davefx/medium/es_ES-davefx-medium
+                es/es_MX/claude/high/es_MX-claude-high
+                nl/nl_NL/pim/medium/nl_NL-pim-medium
+                nl/nl_NL/mls/medium/nl_NL-mls-medium
+                ru/ru_RU/denis/medium/ru_RU-denis-medium
+                ru/ru_RU/irina/medium/ru_RU-irina-medium
+                pl/pl_PL/darkman/medium/pl_PL-darkman-medium
+                pl/pl_PL/gosia/medium/pl_PL-gosia-medium
+                no/no_NO/talesyntese/medium/no_NO-talesyntese-medium
+                sv/sv_SE/lisa/medium/sv_SE-lisa-medium
+              "
+              for vp in $VOICES; do
+                vn=$(basename "$vp")
+                if [ -f "/data/${vn}.onnx" ] && [ -f "/data/${vn}.onnx.json" ]; then
+                  echo "[skip] ${vn}"
+                  continue
+                fi
+                echo "[download] ${vn}..."
+                curl -sSfL -o "/data/${vn}.onnx" "${PIPER_BASE}/${vp}.onnx" && \
+                curl -sSfL -o "/data/${vn}.onnx.json" "${PIPER_BASE}/${vp}.onnx.json" || \
+                echo "[FAILED] ${vn}"
+              done
+              echo "Voice download complete."
+          volumeMounts:
+            - name: piper-voices
+              mountPath: /data
+      {{- end }}
+      containers:
+        - name: piper-tts
+          image: "{{ .Values.piperTts.image.repository }}:{{ .Values.piperTts.image.tag }}"
+          imagePullPolicy: {{ .Values.piperTts.image.pullPolicy }}
+          args:
+            - "--voice"
+            - "{{ .Values.piperTts.defaultVoice }}"
+            - "--update-voices"
+          ports:
+            - name: wyoming
+              containerPort: 10200
+              protocol: TCP
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/voices
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/voices
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.piperTts.resources | nindent 12 }}
+          volumeMounts:
+            - name: piper-voices
+              mountPath: /data
+      volumes:
+        - name: piper-voices
+          {{- if .Values.piperTts.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "aiatc.fullname" . }}-piper-voices
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

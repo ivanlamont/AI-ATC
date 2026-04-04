@@ -1,5 +1,7 @@
 using AIATC.Data.Models.Types;
 using AIATC.Data.Models.Ground;
+using AIATC.Data.Types.Common;
+using AIATC.Data.Types.Navigation;
 
 namespace AIATC.Data.Models.Navigation;
 

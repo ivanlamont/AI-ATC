@@ -1,5 +1,6 @@
 using AIATC.Data.Models.Types;
 using AIATC.Data.Models.Procedures;
+using AIATC.Data.Types.Common;
 
 namespace AIATC.Data.Models.Ground;
 

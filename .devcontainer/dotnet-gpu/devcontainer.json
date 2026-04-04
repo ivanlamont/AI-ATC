@@ -1,0 +1,19 @@
+{
+  "name": "AI-ATC (.NET + GPU)",
+  "image": "mcr.microsoft.com/dotnet/sdk:10.0",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp"
+      ]
+    }
+  },
+  "runArgs": [
+    "--gpus=all"
+  ],
+  "postCreateCommand": "dotnet restore AIATC.slnx"
+}

@@ -25,3 +25,11 @@ public class FlightAwareBffOptions
 {
     public string ApiKey { get; set; } = string.Empty;
 }
+
+public class PiperTtsBffOptions
+{
+    /// <summary>
+    /// Base URL of the Wyoming Piper HTTP API, e.g. http://piper-tts:5000
+    /// </summary>
+    public string BaseUrl { get; set; } = "http://piper-tts:5000";
+}

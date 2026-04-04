@@ -1,7 +1,5 @@
 namespace AIATC.Data.Models.Types;
 
-using T = ApproachTypes;
-
 /**<summary>
 <c>Route Type (RT TYPE)</c> -> <c>Approach Route Type Description</c> character.
 </summary>
@@ -19,21 +17,16 @@ public enum ApproachTypes : uint
     Localizer (LOC) Approach.
     </summary>*/
     // L
-    [Sum<T>(Backcourse, 'B')]
-    [Sum<T>(Directional, 'X')]
     Localizer = 1 << 1,
     /**<summary>
     Non-Directional Beacon (NDB) Approach.
     </summary>*/
     // N
-    [Sum<T>(Equipment, 'Q')]
     Nondirect = 1 << 2,
     /**<summary>
     VOR Approach.
     </summary>*/
     // V
-    [Sum<T>(Equipment, 'D')]
-    [Sum<T>(Equipment | Tactical, 'S')]
     Omnidirect = 1 << 3,
     /**<summary>
     TACAN Approach.
@@ -67,7 +60,6 @@ public enum ApproachTypes : uint
     Area Navigation (RNAV) Approach.
     </summary>*/
     // R
-    [Sum<T>(Performance, 'H')]
     AreaNavigation = 1 << 11,
     /**<summary>
     Simplified Directional Facility (SDF) Approach.

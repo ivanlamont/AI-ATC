@@ -97,6 +97,35 @@ externalReferenceDb:
   # Default password value (should be overridden in production)
   passwordValue: "fly_@irline_RADA4!"
 
+# Piper TTS (Wyoming Protocol) — local text-to-speech engine
+piperTts:
+  enabled: true
+  image:
+    repository: rhasspy/wyoming-piper
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5000
+  defaultVoice: "en_US-ryan-high"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: "5Gi"
+    storageClass: ""
+  # Init container downloads all voice models on first deploy
+  initVoices:
+    enabled: true
+    image:
+      repository: curlimages/curl
+      tag: "latest"
+
 # FlightAware API Configuration
 flightAware:
   apiKey: ""

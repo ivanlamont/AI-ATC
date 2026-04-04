@@ -1,0 +1,42 @@
+{{- if .Values.piperTts.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aiatc.fullname" . }}-piper-tts
+  labels:
+    {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: piper-tts
+spec:
+  type: {{ .Values.piperTts.service.type }}
+  ports:
+    - port: {{ .Values.piperTts.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 10200
+      targetPort: wyoming
+      protocol: TCP
+      name: wyoming
+  selector:
+    {{- include "aiatc.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: piper-tts
+---
+{{- if .Values.piperTts.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "aiatc.fullname" . }}-piper-voices
+  labels:
+    {{- include "aiatc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: piper-tts
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.piperTts.persistence.size }}
+  {{- if .Values.piperTts.persistence.storageClass }}
+  storageClassName: {{ .Values.piperTts.persistence.storageClass }}
+  {{- end }}
+{{- end }}
+{{- end }}

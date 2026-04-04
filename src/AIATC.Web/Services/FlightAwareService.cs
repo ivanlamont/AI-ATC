@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AIATC.Domain.Models;
 using AIATC.Domain.Models.Aviation;
+using AIATC.Domain.Services;
 using Serilog;
 
 namespace AIATC.Web.Services;
@@ -121,9 +122,10 @@ public class FlightAwareService : IFlightAwareService
             try
             {
                 var positionNm = LatLonToNm(fa.Latitude ?? 0, fa.Longitude ?? 0, centerLat, centerLon);
+                var callsign = fa.Ident ?? $"FLIGHT{fa.FlightId}";
                 result.Add(new AircraftModel
                 {
-                    Callsign = fa.Ident ?? $"FLIGHT{fa.FlightId}",
+                    Callsign = callsign,
                     PositionNm = positionNm,
                     HeadingDegrees = fa.Heading ?? 0,
                     SpeedKnots = fa.Groundspeed ?? 0,
@@ -133,7 +135,8 @@ public class FlightAwareService : IFlightAwareService
                     IsArrival = fa.IsArrival ?? false,
                     TargetHeadingDegrees = null,
                     TargetAltitudeFt = null,
-                    TargetSpeedKnots = null
+                    TargetSpeedKnots = null,
+                    AssignedPiperVoice = AirlineVoiceMapper.AssignVoice(callsign).PiperVoiceName
                 });
             }
             catch (Exception ex)
@@ -156,9 +159,10 @@ public class FlightAwareService : IFlightAwareService
                 var angle = rng.NextDouble() * 2 * Math.PI;
                 var distance = rng.NextDouble() * 20.0;
 
+                var callsign = flight.Ident ?? $"FLIGHT{flight.FlightId}";
                 result.Add(new AircraftModel
                 {
-                    Callsign = flight.Ident ?? $"FLIGHT{flight.FlightId}",
+                    Callsign = callsign,
                     PositionNm = new Vector2(
                         (float)(distance * Math.Cos(angle)),
                         (float)(distance * Math.Sin(angle))),
@@ -170,7 +174,8 @@ public class FlightAwareService : IFlightAwareService
                     IsArrival = flight.IsArrival ?? false,
                     TargetHeadingDegrees = null,
                     TargetAltitudeFt = null,
-                    TargetSpeedKnots = null
+                    TargetSpeedKnots = null,
+                    AssignedPiperVoice = AirlineVoiceMapper.AssignVoice(callsign).PiperVoiceName
                 });
             }
             catch (Exception ex)

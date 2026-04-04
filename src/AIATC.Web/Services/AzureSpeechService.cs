@@ -21,9 +21,10 @@ public interface IAzureSpeechService
     Task<SpeechRecognitionResult> RecognizeSpeechAsync(byte[] audioData, string language = "en-US");
 
     /// <summary>
-    /// Convert text to speech with ATC voice characteristics
+    /// Convert text to speech with ATC voice characteristics.
+    /// When piperVoice is specified, synthesis is delegated to the Piper TTS backend.
     /// </summary>
-    Task<byte[]> SynthesizeSpeechAsync(string text, ATCVoiceProfile voiceProfile = ATCVoiceProfile.ControllerMale);
+    Task<byte[]> SynthesizeSpeechAsync(string text, ATCVoiceProfile voiceProfile = ATCVoiceProfile.ControllerMale, string? piperVoice = null);
 
     /// <summary>
     /// Start continuous speech recognition for live ATC communications
@@ -71,6 +72,7 @@ public class AzureSpeechService : IAzureSpeechService
     private readonly SpeechRecognitionService _fallbackRecognition;
     private readonly TextToSpeechService _fallbackTTS;
     private readonly AviationVocabularyService _vocabularyService;
+    private readonly IPiperTtsService _piperTts;
 
     private string? _speechToken;
     private string? _region;
@@ -107,12 +109,14 @@ public class AzureSpeechService : IAzureSpeechService
         HttpClient httpClient,
         SpeechRecognitionService fallbackRecognition,
         TextToSpeechService fallbackTTS,
-        AviationVocabularyService vocabularyService)
+        AviationVocabularyService vocabularyService,
+        IPiperTtsService piperTts)
     {
         _httpClient = httpClient;
         _fallbackRecognition = fallbackRecognition;
         _fallbackTTS = fallbackTTS;
         _vocabularyService = vocabularyService;
+        _piperTts = piperTts;
         
         // Wire up fallback events
         _fallbackRecognition.SpeechRecognized += OnFallbackSpeechRecognized;
@@ -214,8 +218,18 @@ public class AzureSpeechService : IAzureSpeechService
         }
     }
 
-    public async Task<byte[]> SynthesizeSpeechAsync(string text, ATCVoiceProfile voiceProfile = ATCVoiceProfile.ControllerMale)
+    public async Task<byte[]> SynthesizeSpeechAsync(string text, ATCVoiceProfile voiceProfile = ATCVoiceProfile.ControllerMale, string? piperVoice = null)
     {
+        // When a Piper voice is specified, use the local Piper TTS engine
+        if (!string.IsNullOrEmpty(piperVoice))
+        {
+            var piperResult = await _piperTts.SynthesizeSpeechAsync(text, piperVoice);
+            if (piperResult.Length > 0)
+                return piperResult;
+
+            Log.Warning("Piper TTS returned empty result for voice {Voice}, falling back", piperVoice);
+        }
+
         if (IsAzureAvailable)
         {
             return await SynthesizeWithAzureAsync(text, voiceProfile);

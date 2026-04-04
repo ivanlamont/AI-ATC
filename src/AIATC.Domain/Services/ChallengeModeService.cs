@@ -423,9 +423,10 @@ namespace AIATC.Domain.Services
 
         private AircraftModel CreateTestAircraft()
         {
+            const string callsign = "TEST123";
             return new AircraftModel
             {
-                Callsign = "TEST123",
+                Callsign = callsign,
                 AircraftType = "B738",
                 IsArrival = true,
                 PositionNm = new Vector2(10, 5), // 10nm from airport
@@ -434,7 +435,8 @@ namespace AIATC.Domain.Services
                 AltitudeFt = 3000,
                 MinSpeedKnots = 100,
                 MaxSpeedKnots = 250,
-                MaxTurnRateRadPerSec = 0.1f
+                MaxTurnRateRadPerSec = 0.1f,
+                AssignedPiperVoice = AirlineVoiceMapper.AssignVoice(callsign).PiperVoiceName
             };
         }
 

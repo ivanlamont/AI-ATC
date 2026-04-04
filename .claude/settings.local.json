@@ -70,7 +70,8 @@
       "WebFetch(domain:aviationweather.gov)",
       "Bash(node:*)",
       "Bash(powershell:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find /home/ivan/source/repos/AI-ATC -type f \\\\\\(-name *.md -o -name README* \\\\\\))"
     ]
   }
 }
